@@ -55,9 +55,13 @@ ARCH=$(uname -m)
 case $ARCH in
     x86_64)
         ARCH="x86_64"
+        HAS_BINARY=true
         ;;
     aarch64|arm64)
         ARCH="aarch64"
+        HAS_BINARY=false
+        echo -e "${YELLOW}Note: Pre-built binaries are only available for x86_64.${NC}"
+        echo -e "${YELLOW}      Will build from source for aarch64.${NC}"
         ;;
     *)
         echo -e "${RED}Error: Unsupported architecture: $ARCH${NC}"
@@ -71,9 +75,13 @@ echo -e "${GREEN}→${NC} Detected: Ubuntu $VERSION_ID ($ARCH)"
 echo -e "${GREEN}→${NC} Fetching latest release..."
 LATEST_RELEASE=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
 
-if [ -z "$LATEST_RELEASE" ]; then
-    # No releases yet, build from source
-    echo -e "${YELLOW}→${NC} No releases found. Building from source..."
+if [ -z "$LATEST_RELEASE" ] || [ "$HAS_BINARY" = "false" ]; then
+    # No releases or no binary for this arch - build from source
+    if [ -z "$LATEST_RELEASE" ]; then
+        echo -e "${YELLOW}→${NC} No releases found. Building from source..."
+    else
+        echo -e "${YELLOW}→${NC} Building from source for $ARCH..."
+    fi
 
     # Install dependencies
     echo -e "${GREEN}→${NC} Installing build dependencies..."

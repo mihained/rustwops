@@ -10,50 +10,28 @@ env:
 
 jobs:
   build:
-    name: Build ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            artifact: rw-linux-x86_64
-            use_cross: false
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            artifact: rw-linux-aarch64
-            use_cross: true
+    name: Build Linux x86_64
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
 
-      - name: Install cross
-        if: matrix.use_cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
-
-      - name: Build with cross
-        if: matrix.use_cross
-        run: cross build --release --target ${{ matrix.target }}
-
-      - name: Build with cargo
-        if: ${{ !matrix.use_cross }}
-        run: cargo build --release --target ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release
 
       - name: Package
         run: |
-          cp target/${{ matrix.target }}/release/rw ${{ matrix.artifact }}
-          chmod +x ${{ matrix.artifact }}
+          cp target/release/rw rw-linux-x86_64
+          chmod +x rw-linux-x86_64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          name: rw-linux-x86_64
+          path: rw-linux-x86_64
 
   release:
     name: Create Release
@@ -75,7 +53,6 @@ jobs:
         with:
           files: |
             artifacts/rw-linux-x86_64/rw-linux-x86_64
-            artifacts/rw-linux-aarch64/rw-linux-aarch64
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
