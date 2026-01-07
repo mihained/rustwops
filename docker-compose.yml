@@ -1,0 +1,73 @@
+# RustWops Development Environment
+# Run with: docker compose up -d
+# Enter container: docker compose exec rustwops bash
+
+services:
+  rustwops:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rustwops-dev
+    hostname: rustwops-dev
+
+    # Required for systemd
+    privileged: true
+
+    # Cgroup support for systemd
+    cgroup: host
+
+    volumes:
+      # Map project directory into container
+      - .:/rustwops:cached
+
+      # Cargo registry cache (speeds up builds)
+      - cargo-registry:/root/.cargo/registry
+      - cargo-git:/root/.cargo/git
+
+      # Target directory (build artifacts)
+      - cargo-target:/rustwops/target
+
+      # Systemd cgroups
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+
+    # Keep container running
+    stdin_open: true
+    tty: true
+
+    # Expose ports for testing
+    ports:
+      # Nginx HTTP (direct port 80)
+      - "80:80"
+      # Nginx HTTPS
+      - "443:443"
+      # RustWops API
+      - "8888:8080"
+      # MySQL/MariaDB
+      - "3307:3306"
+      # Redis
+      - "6380:6379"
+
+    # Environment variables
+    environment:
+      - RUST_BACKTRACE=1
+      - RUST_LOG=debug
+      - TERM=xterm-256color
+
+    # tmpfs for faster operations
+    tmpfs:
+      - /tmp
+      - /run
+      - /run/lock
+
+    # Healthcheck
+    healthcheck:
+      test: ["CMD", "systemctl", "is-system-running", "--quiet"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  cargo-registry:
+  cargo-git:
+  cargo-target:
