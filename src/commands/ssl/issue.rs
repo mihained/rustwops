@@ -4,7 +4,12 @@ use colored::Colorize;
 use super::{DnsProvider, KeyType};
 use crate::utils::shell;
 
-pub async fn execute_http(domain: &str, key_type: KeyType, staging: bool, verbose: bool) -> Result<()> {
+pub async fn execute_http(
+    domain: &str,
+    key_type: KeyType,
+    staging: bool,
+    verbose: bool,
+) -> Result<()> {
     let mode = if staging { " (STAGING)" } else { "" };
     println!(
         "{} Issuing SSL certificate for {} (HTTP-01){}...\n",
@@ -55,7 +60,11 @@ pub async fn execute_http(domain: &str, key_type: KeyType, staging: bool, verbos
     println!(
         "\n{} SSL certificate issued successfully!{}\n",
         "✓".green().bold(),
-        if staging { " (STAGING - not for production)" } else { "" }
+        if staging {
+            " (STAGING - not for production)"
+        } else {
+            ""
+        }
     );
 
     println!("  Certificate: {}/fullchain.pem", cert_dir);
@@ -64,7 +73,13 @@ pub async fn execute_http(domain: &str, key_type: KeyType, staging: bool, verbos
     Ok(())
 }
 
-pub async fn execute_dns(domain: &str, provider: DnsProvider, key_type: KeyType, staging: bool, verbose: bool) -> Result<()> {
+pub async fn execute_dns(
+    domain: &str,
+    provider: DnsProvider,
+    key_type: KeyType,
+    staging: bool,
+    verbose: bool,
+) -> Result<()> {
     let mode = if staging { " (STAGING)" } else { "" };
     println!(
         "{} Issuing wildcard SSL certificate for {} (DNS-01){}...\n",
@@ -115,7 +130,11 @@ pub async fn execute_dns(domain: &str, provider: DnsProvider, key_type: KeyType,
     println!(
         "\n{} Wildcard SSL certificate issued successfully!{}\n",
         "✓".green().bold(),
-        if staging { " (STAGING - not for production)" } else { "" }
+        if staging {
+            " (STAGING - not for production)"
+        } else {
+            ""
+        }
     );
 
     println!("  Domains: {}, *.{}", domain, domain);
@@ -148,9 +167,9 @@ async fn get_dns_env(provider: DnsProvider) -> Result<String> {
 
     match provider {
         DnsProvider::Cloudflare => {
-            let cf = config.get("cloudflare").ok_or_else(|| {
-                anyhow::anyhow!("Cloudflare credentials not found")
-            })?;
+            let cf = config
+                .get("cloudflare")
+                .ok_or_else(|| anyhow::anyhow!("Cloudflare credentials not found"))?;
 
             if let Some(token) = cf.get("token").and_then(|v| v.as_str()) {
                 Ok(format!("export CF_Token='{}'", token))
@@ -167,9 +186,9 @@ async fn get_dns_env(provider: DnsProvider) -> Result<String> {
             }
         }
         DnsProvider::Digitalocean => {
-            let do_config = config.get("digitalocean").ok_or_else(|| {
-                anyhow::anyhow!("DigitalOcean credentials not found")
-            })?;
+            let do_config = config
+                .get("digitalocean")
+                .ok_or_else(|| anyhow::anyhow!("DigitalOcean credentials not found"))?;
 
             let api_key = do_config
                 .get("api_key")
@@ -179,9 +198,9 @@ async fn get_dns_env(provider: DnsProvider) -> Result<String> {
             Ok(format!("export DO_API_KEY='{}'", api_key))
         }
         DnsProvider::Route53 => {
-            let aws = config.get("route53").ok_or_else(|| {
-                anyhow::anyhow!("Route53 credentials not found")
-            })?;
+            let aws = config
+                .get("route53")
+                .ok_or_else(|| anyhow::anyhow!("Route53 credentials not found"))?;
 
             let access_key = aws
                 .get("access_key_id")

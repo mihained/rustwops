@@ -82,9 +82,7 @@ impl std::fmt::Display for SyncDirection {
 
 pub async fn execute(command: StagingCommand, cli: &Cli) -> Result<()> {
     match command {
-        StagingCommand::Create { domain, prefix } => {
-            create_staging(&domain, &prefix, cli).await
-        }
+        StagingCommand::Create { domain, prefix } => create_staging(&domain, &prefix, cli).await,
         StagingCommand::Sync {
             domain,
             direction,
@@ -93,17 +91,20 @@ pub async fn execute(command: StagingCommand, cli: &Cli) -> Result<()> {
             exclude_tables,
             dry_run,
         } => {
-            sync_staging(&domain, direction, files_only, db_only, exclude_tables, dry_run, cli).await
+            sync_staging(
+                &domain,
+                direction,
+                files_only,
+                db_only,
+                exclude_tables,
+                dry_run,
+                cli,
+            )
+            .await
         }
-        StagingCommand::Delete { domain } => {
-            delete_staging(&domain, cli).await
-        }
-        StagingCommand::List => {
-            list_staging().await
-        }
-        StagingCommand::Info { domain } => {
-            show_staging_info(&domain).await
-        }
+        StagingCommand::Delete { domain } => delete_staging(&domain, cli).await,
+        StagingCommand::List => list_staging().await,
+        StagingCommand::Info { domain } => show_staging_info(&domain).await,
     }
 }
 
@@ -124,8 +125,14 @@ async fn create_staging(production_domain: &str, prefix: &str, _cli: &Cli) -> Re
     }
 
     // Check if staging already exists
-    if database::staging::get_by_production(production_domain).await?.is_some() {
-        anyhow::bail!("Staging environment already exists for {}", production_domain);
+    if database::staging::get_by_production(production_domain)
+        .await?
+        .is_some()
+    {
+        anyhow::bail!(
+            "Staging environment already exists for {}",
+            production_domain
+        );
     }
 
     let staging_domain = format!("{}.{}", prefix, production_domain);
@@ -139,7 +146,11 @@ async fn create_staging(production_domain: &str, prefix: &str, _cli: &Cli) -> Re
     let prod_site = database::sites::get(production_domain).await?;
     let php_version = prod_site.php_version.as_deref().unwrap_or("8.4");
 
-    println!("  {} Staging domain: {}", "→".bright_cyan(), staging_domain.bright_white());
+    println!(
+        "  {} Staging domain: {}",
+        "→".bright_cyan(),
+        staging_domain.bright_white()
+    );
 
     // Create staging directory structure
     let staging_webroot = format!("/var/www/{}/staging/public", production_domain);
@@ -152,30 +163,61 @@ async fn create_staging(production_domain: &str, prefix: &str, _cli: &Cli) -> Re
     println!("  {} Cloning files from production...", "→".bright_cyan());
     shell::run_command(
         "rsync",
-        &["-a", "--delete", &format!("{}/", prod_webroot), &format!("{}/", staging_webroot)],
-    ).await?;
+        &[
+            "-a",
+            "--delete",
+            &format!("{}/", prod_webroot),
+            &format!("{}/", staging_webroot),
+        ],
+    )
+    .await?;
     println!("  {} Cloned files", "✓".green());
 
     // Clone database if applicable
     let staging_db = if prod_site.site_type == "wp" || prod_site.site_type == "php" {
         if let Some(prod_db) = database::databases::get_by_domain(production_domain).await? {
             let staging_db_name = format!("{}_staging", prod_db.db_name);
-            let staging_db_user = format!("{}_stg", &prod_db.db_user[..prod_db.db_user.len().min(12)]);
+            let staging_db_user =
+                format!("{}_stg", &prod_db.db_user[..prod_db.db_user.len().min(12)]);
             let staging_db_pass = password::generate(32);
 
             // Create staging database
-            clone_database(&prod_db.db_name, &staging_db_name, &staging_db_user, &staging_db_pass).await?;
+            clone_database(
+                &prod_db.db_name,
+                &staging_db_name,
+                &staging_db_user,
+                &staging_db_pass,
+            )
+            .await?;
             println!("  {} Cloned database", "✓".green());
 
             // Store staging database info
-            database::databases::create(&staging_domain, &staging_db_name, &staging_db_user, &staging_db_pass).await?;
+            database::databases::create(
+                &staging_domain,
+                &staging_db_name,
+                &staging_db_user,
+                &staging_db_pass,
+            )
+            .await?;
 
             // For WordPress, update wp-config.php to use staging database
             if prod_site.site_type == "wp" {
-                update_wp_config(&staging_webroot, &staging_db_name, &staging_db_user, &staging_db_pass).await?;
+                update_wp_config(
+                    &staging_webroot,
+                    &staging_db_name,
+                    &staging_db_user,
+                    &staging_db_pass,
+                )
+                .await?;
                 println!("  {} Updated wp-config.php", "✓".green());
 
-                wp_search_replace(production_domain, &staging_domain, &staging_webroot, &staging_db_name).await?;
+                wp_search_replace(
+                    production_domain,
+                    &staging_domain,
+                    &staging_webroot,
+                    &staging_db_name,
+                )
+                .await?;
                 println!("  {} Updated WordPress URLs", "✓".green());
             }
 
@@ -210,7 +252,15 @@ async fn create_staging(production_domain: &str, prefix: &str, _cli: &Cli) -> Re
         _ => None,
     });
 
-    nginx::create_site_config(&staging_domain, site_type, php_version, cache_type, &staging_webroot, None).await?;
+    nginx::create_site_config(
+        &staging_domain,
+        site_type,
+        php_version,
+        cache_type,
+        &staging_webroot,
+        None,
+    )
+    .await?;
     println!("  {} Created Nginx configuration", "✓".green());
 
     // Enable staging site
@@ -221,7 +271,10 @@ async fn create_staging(production_domain: &str, prefix: &str, _cli: &Cli) -> Re
 
     // Set permissions
     let staging_base = format!("/var/www/{}/staging", production_domain);
-    if shell::run_command("chown", &["-R", "www-data:www-data", &staging_base]).await.is_err() {
+    if shell::run_command("chown", &["-R", "www-data:www-data", &staging_base])
+        .await
+        .is_err()
+    {
         shell::run_command("chown", &["-R", "root:root", &staging_base]).await?;
     }
     println!("  {} Set file permissions", "✓".green());
@@ -238,17 +291,29 @@ async fn create_staging(production_domain: &str, prefix: &str, _cli: &Cli) -> Re
     println!("  {} Reloaded services", "✓".green());
 
     // Register staging site in database (with correct staging webroot)
-    database::sites::create_with_webroot(&staging_domain, site_type, php_version, cache_type, &staging_webroot).await?;
+    database::sites::create_with_webroot(
+        &staging_domain,
+        site_type,
+        php_version,
+        cache_type,
+        &staging_webroot,
+    )
+    .await?;
     database::staging::create(production_domain, prefix).await?;
 
     // Print summary
     println!("\n{}", "━".repeat(50).dimmed());
+    println!("\n{} Staging environment created!\n", "✓".green().bold());
     println!(
-        "\n{} Staging environment created!\n",
-        "✓".green().bold()
+        "  {} Production: http://{}",
+        "→".bright_cyan(),
+        production_domain
     );
-    println!("  {} Production: http://{}", "→".bright_cyan(), production_domain);
-    println!("  {} Staging:    http://{}", "→".bright_cyan(), staging_domain);
+    println!(
+        "  {} Staging:    http://{}",
+        "→".bright_cyan(),
+        staging_domain
+    );
 
     if let Some((db_name, db_user, db_pass)) = staging_db {
         println!("\n  {} Staging Database:", "→".bright_cyan());
@@ -257,7 +322,11 @@ async fn create_staging(production_domain: &str, prefix: &str, _cli: &Cli) -> Re
         println!("    Password: {}", db_pass.bright_yellow());
     }
 
-    println!("\n  {} Add to /etc/hosts: 127.0.0.1 {}", "ℹ".blue(), staging_domain);
+    println!(
+        "\n  {} Add to /etc/hosts: 127.0.0.1 {}",
+        "ℹ".blue(),
+        staging_domain
+    );
     println!();
 
     Ok(())
@@ -327,14 +396,26 @@ async fn sync_staging(
         };
 
         if dry_run {
-            println!("  {} [DRY RUN] Would sync files: {} → {}", "→".bright_cyan(), source, dest);
+            println!(
+                "  {} [DRY RUN] Would sync files: {} → {}",
+                "→".bright_cyan(),
+                source,
+                dest
+            );
         } else {
             println!("  {} Syncing files...", "→".bright_cyan());
             // Exclude wp-config.php to preserve database credentials
             shell::run_command(
                 "rsync",
-                &["-a", "--delete", "--exclude=wp-config.php", &format!("{}/", source), &format!("{}/", dest)],
-            ).await?;
+                &[
+                    "-a",
+                    "--delete",
+                    "--exclude=wp-config.php",
+                    &format!("{}/", source),
+                    &format!("{}/", dest),
+                ],
+            )
+            .await?;
             println!("  {} Files synced", "✓".green());
         }
     }
@@ -346,8 +427,18 @@ async fn sync_staging(
 
         if let (Some(prod_db), Some(staging_db)) = (prod_db, staging_db) {
             let (source_db, dest_db, source_domain, dest_domain) = match direction {
-                SyncDirection::ProdToStage => (&prod_db.db_name, &staging_db.db_name, production_domain, staging_domain.as_str()),
-                SyncDirection::StageToProd => (&staging_db.db_name, &prod_db.db_name, staging_domain.as_str(), production_domain),
+                SyncDirection::ProdToStage => (
+                    &prod_db.db_name,
+                    &staging_db.db_name,
+                    production_domain,
+                    staging_domain.as_str(),
+                ),
+                SyncDirection::StageToProd => (
+                    &staging_db.db_name,
+                    &prod_db.db_name,
+                    staging_domain.as_str(),
+                    production_domain,
+                ),
             };
 
             // Parse excluded tables
@@ -357,9 +448,18 @@ async fn sync_staging(
                 .unwrap_or_default();
 
             if dry_run {
-                println!("  {} [DRY RUN] Would sync database: {} → {}", "→".bright_cyan(), source_db, dest_db);
+                println!(
+                    "  {} [DRY RUN] Would sync database: {} → {}",
+                    "→".bright_cyan(),
+                    source_db,
+                    dest_db
+                );
                 if !exclude.is_empty() {
-                    println!("  {} [DRY RUN] Excluding tables: {}", "→".bright_cyan(), exclude.join(", "));
+                    println!(
+                        "  {} [DRY RUN] Excluding tables: {}",
+                        "→".bright_cyan(),
+                        exclude.join(", ")
+                    );
                 }
             } else {
                 println!("  {} Syncing database...", "→".bright_cyan());
@@ -383,10 +483,7 @@ async fn sync_staging(
         // Update sync timestamp
         database::staging::update_sync(production_domain, &direction.to_string()).await?;
 
-        println!(
-            "\n{} Sync complete!\n",
-            "✓".green().bold()
-        );
+        println!("\n{} Sync complete!\n", "✓".green().bold());
     } else {
         println!(
             "\n{} Dry run complete. No changes made.\n",
@@ -439,7 +536,10 @@ async fn delete_staging(production_domain: &str, cli: &Cli) -> Result<()> {
 
     // Remove PHP-FPM pool
     if prod_site.site_type == "wp" || prod_site.site_type == "php" {
-        let pool_file = format!("/etc/php/{}/fpm/pool.d/{}.conf", php_version, staging_domain);
+        let pool_file = format!(
+            "/etc/php/{}/fpm/pool.d/{}.conf",
+            php_version, staging_domain
+        );
         shell::run_command("rm", &["-f", &pool_file]).await?;
         println!("  {} Removed PHP-FPM pool", "✓".green());
     }
@@ -474,10 +574,7 @@ async fn delete_staging(production_domain: &str, cli: &Cli) -> Result<()> {
     database::sites::delete(staging_domain).await?;
     database::staging::delete(production_domain).await?;
 
-    println!(
-        "\n{} Staging environment deleted!\n",
-        "✓".green().bold()
-    );
+    println!("\n{} Staging environment deleted!\n", "✓".green().bold());
 
     Ok(())
 }
@@ -523,14 +620,17 @@ async fn list_staging() -> Result<()> {
                 "SELECT domain FROM sites WHERE id = ?1",
                 rusqlite::params![staging.production_site_id],
                 |row| row.get::<_, String>(0),
-            ).unwrap_or_else(|_| "unknown".to_string())
+            )
+            .unwrap_or_else(|_| "unknown".to_string())
         };
 
-        let last_sync = staging.last_sync_at
+        let last_sync = staging
+            .last_sync_at
             .map(|s| s[..19].to_string())
             .unwrap_or_else(|| "never".to_string());
 
-        let direction = staging.last_sync_direction
+        let direction = staging
+            .last_sync_direction
             .map(|d| match d.as_str() {
                 "prod_to_stage" => "prod → stage".to_string(),
                 "stage_to_prod" => "stage → prod".to_string(),
@@ -588,7 +688,10 @@ async fn show_staging_info(production_domain: &str) -> Result<()> {
 
     println!("\n  {} Paths:", "●".bright_white().bold());
     println!("    Production: /var/www/{}/prod/public", production_domain);
-    println!("    Staging:    /var/www/{}/staging/public", production_domain);
+    println!(
+        "    Staging:    /var/www/{}/staging/public",
+        production_domain
+    );
 
     // Database info
     if let Some(prod_db) = database::databases::get_by_domain(production_domain).await? {
@@ -604,17 +707,23 @@ async fn show_staging_info(production_domain: &str) -> Result<()> {
     }
 
     // Disk usage
-    let prod_size = shell::run_command("du", &["-sh", &format!("/var/www/{}/prod", production_domain)])
-        .await
-        .ok()
-        .and_then(|s| s.split_whitespace().next().map(String::from))
-        .unwrap_or_else(|| "N/A".to_string());
+    let prod_size = shell::run_command(
+        "du",
+        &["-sh", &format!("/var/www/{}/prod", production_domain)],
+    )
+    .await
+    .ok()
+    .and_then(|s| s.split_whitespace().next().map(String::from))
+    .unwrap_or_else(|| "N/A".to_string());
 
-    let staging_size = shell::run_command("du", &["-sh", &format!("/var/www/{}/staging", production_domain)])
-        .await
-        .ok()
-        .and_then(|s| s.split_whitespace().next().map(String::from))
-        .unwrap_or_else(|| "N/A".to_string());
+    let staging_size = shell::run_command(
+        "du",
+        &["-sh", &format!("/var/www/{}/staging", production_domain)],
+    )
+    .await
+    .ok()
+    .and_then(|s| s.split_whitespace().next().map(String::from))
+    .unwrap_or_else(|| "N/A".to_string());
 
     println!("\n  {} Disk Usage:", "●".bright_white().bold());
     println!("    Production: {}", prod_size);
@@ -629,7 +738,12 @@ async fn show_staging_info(production_domain: &str) -> Result<()> {
 // Helper Functions
 // =============================================================================
 
-async fn clone_database(source_db: &str, dest_db: &str, dest_user: &str, dest_pass: &str) -> Result<()> {
+async fn clone_database(
+    source_db: &str,
+    dest_db: &str,
+    dest_user: &str,
+    dest_pass: &str,
+) -> Result<()> {
     // Create destination database and user
     // Drop user first to ensure we can set the correct password
     // (CREATE USER IF NOT EXISTS doesn't update password for existing users)
@@ -663,11 +777,7 @@ async fn sync_database(source_db: &str, dest_db: &str, exclude_tables: &[&str]) 
         dump_args.push(format!("--ignore-table={}.{}", source_db, table));
     }
 
-    let dump_cmd = format!(
-        "mysqldump {} | mysql {}",
-        dump_args.join(" "),
-        dest_db
-    );
+    let dump_cmd = format!("mysqldump {} | mysql {}", dump_args.join(" "), dest_db);
 
     // Drop all tables in destination first (to ensure clean sync)
     let drop_tables = format!(
@@ -693,7 +803,12 @@ async fn sync_database(source_db: &str, dest_db: &str, exclude_tables: &[&str]) 
     Ok(())
 }
 
-async fn wp_search_replace(old_domain: &str, new_domain: &str, webroot: &str, _db_name: &str) -> Result<()> {
+async fn wp_search_replace(
+    old_domain: &str,
+    new_domain: &str,
+    webroot: &str,
+    _db_name: &str,
+) -> Result<()> {
     // Use WP-CLI for search-replace (handles serialized data correctly)
     let old_url = format!("http://{}", old_domain);
     let new_url = format!("http://{}", new_domain);
@@ -708,7 +823,8 @@ async fn wp_search_replace(old_domain: &str, new_domain: &str, webroot: &str, _d
             "--all-tables",
             "--allow-root",
         ],
-    ).await?;
+    )
+    .await?;
 
     // Also replace https if applicable
     let old_https = format!("https://{}", old_domain);
@@ -724,12 +840,18 @@ async fn wp_search_replace(old_domain: &str, new_domain: &str, webroot: &str, _d
             "--all-tables",
             "--allow-root",
         ],
-    ).await;
+    )
+    .await;
 
     Ok(())
 }
 
-async fn update_wp_config(webroot: &str, db_name: &str, db_user: &str, db_pass: &str) -> Result<()> {
+async fn update_wp_config(
+    webroot: &str,
+    db_name: &str,
+    db_user: &str,
+    db_pass: &str,
+) -> Result<()> {
     let wp_config_path = format!("{}/wp-config.php", webroot);
 
     // Read current wp-config.php
@@ -737,13 +859,22 @@ async fn update_wp_config(webroot: &str, db_name: &str, db_user: &str, db_pass: 
 
     // Replace database credentials using regex
     // Match: define( 'DB_NAME', 'value' ) with various spacing and quote styles
-    let db_name_re = regex::Regex::new(r#"define\s*\(\s*['"]DB_NAME['"]\s*,\s*['"][^'"]*['"]\s*\)"#)?;
-    let db_user_re = regex::Regex::new(r#"define\s*\(\s*['"]DB_USER['"]\s*,\s*['"][^'"]*['"]\s*\)"#)?;
-    let db_pass_re = regex::Regex::new(r#"define\s*\(\s*['"]DB_PASSWORD['"]\s*,\s*['"][^'"]*['"]\s*\)"#)?;
+    let db_name_re =
+        regex::Regex::new(r#"define\s*\(\s*['"]DB_NAME['"]\s*,\s*['"][^'"]*['"]\s*\)"#)?;
+    let db_user_re =
+        regex::Regex::new(r#"define\s*\(\s*['"]DB_USER['"]\s*,\s*['"][^'"]*['"]\s*\)"#)?;
+    let db_pass_re =
+        regex::Regex::new(r#"define\s*\(\s*['"]DB_PASSWORD['"]\s*,\s*['"][^'"]*['"]\s*\)"#)?;
 
-    let content = db_name_re.replace(&content, format!("define( 'DB_NAME', '{}' )", db_name)).to_string();
-    let content = db_user_re.replace(&content, format!("define( 'DB_USER', '{}' )", db_user)).to_string();
-    let content = db_pass_re.replace(&content, format!("define( 'DB_PASSWORD', '{}' )", db_pass)).to_string();
+    let content = db_name_re
+        .replace(&content, format!("define( 'DB_NAME', '{}' )", db_name))
+        .to_string();
+    let content = db_user_re
+        .replace(&content, format!("define( 'DB_USER', '{}' )", db_user))
+        .to_string();
+    let content = db_pass_re
+        .replace(&content, format!("define( 'DB_PASSWORD', '{}' )", db_pass))
+        .to_string();
 
     tokio::fs::write(&wp_config_path, content).await?;
 

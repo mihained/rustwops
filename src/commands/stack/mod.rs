@@ -98,22 +98,21 @@ pub async fn execute(command: StackCommand, cli: &Cli) -> anyhow::Result<()> {
             node_version,
             nginx_custom,
         } => {
-            install::execute(all, components, &php_version, db_type, &node_version, nginx_custom, cli).await
+            install::execute(
+                all,
+                components,
+                &php_version,
+                db_type,
+                &node_version,
+                nginx_custom,
+                cli,
+            )
+            .await
         }
-        StackCommand::Remove { components, purge } => {
-            remove::execute(components, purge, cli).await
-        }
-        StackCommand::Update { components } => {
-            update::execute(components, cli).await
-        }
-        StackCommand::Status => {
-            status::execute(cli).await
-        }
-        StackCommand::PhpVersions => {
-            install::list_php_versions(cli).await
-        }
-        StackCommand::PhpInstall { version } => {
-            install::install_php_version(&version, cli).await
-        }
+        StackCommand::Remove { components, purge } => remove::execute(components, purge, cli).await,
+        StackCommand::Update { components } => update::execute(components, cli).await,
+        StackCommand::Status => status::execute(cli).await,
+        StackCommand::PhpVersions => install::list_php_versions(cli).await,
+        StackCommand::PhpInstall { version } => install::install_php_version(&version, cli).await,
     }
 }

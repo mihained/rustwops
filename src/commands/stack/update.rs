@@ -28,15 +28,15 @@ pub async fn execute(components: Vec<Component>, cli: &Cli) -> Result<()> {
                 Component::Nodejs => update_nodejs(cli.verbose).await?,
                 Component::Fail2ban => update_security_tool("fail2ban", cli.verbose).await?,
                 Component::Mysqltuner => update_mysqltuner(cli.verbose).await?,
-                Component::Clamav => update_security_tool("clamav clamav-daemon clamav-freshclam", cli.verbose).await?,
+                Component::Clamav => {
+                    update_security_tool("clamav clamav-daemon clamav-freshclam", cli.verbose)
+                        .await?
+                }
             }
         }
     }
 
-    println!(
-        "\n{} Stack update complete!\n",
-        "✓".green().bold()
-    );
+    println!("\n{} Stack update complete!\n", "✓".green().bold());
 
     Ok(())
 }
@@ -44,12 +44,7 @@ pub async fn execute(components: Vec<Component>, cli: &Cli) -> Result<()> {
 async fn update_all(verbose: bool) -> Result<()> {
     println!("  {} Upgrading all packages...", "→".dimmed());
 
-    shell::run_command_with_output(
-        "apt-get",
-        &["upgrade", "-y", "-qq"],
-        verbose,
-    )
-    .await?;
+    shell::run_command_with_output("apt-get", &["upgrade", "-y", "-qq"], verbose).await?;
 
     // Also update auxiliary tools
     update_auxiliary_tools(verbose).await?;
@@ -83,12 +78,20 @@ async fn update_php(verbose: bool) -> Result<()> {
         if shell::run_command("dpkg", &["-l", &fpm]).await.is_ok() {
             shell::run_command_with_output(
                 "apt-get",
-                &["install", "--only-upgrade", "-y", "-qq", &format!("php{}*", version)],
+                &[
+                    "install",
+                    "--only-upgrade",
+                    "-y",
+                    "-qq",
+                    &format!("php{}*", version),
+                ],
                 verbose,
             )
             .await?;
 
-            shell::run_command("systemctl", &["reload", &fpm]).await.ok();
+            shell::run_command("systemctl", &["reload", &fpm])
+                .await
+                .ok();
         }
     }
 
@@ -100,20 +103,40 @@ async fn update_database(verbose: bool) -> Result<()> {
     println!("  {} Updating database server...", "→".dimmed());
 
     // Try MariaDB first
-    if shell::run_command("dpkg", &["-l", "mariadb-server"]).await.is_ok() {
+    if shell::run_command("dpkg", &["-l", "mariadb-server"])
+        .await
+        .is_ok()
+    {
         shell::run_command_with_output(
             "apt-get",
-            &["install", "--only-upgrade", "-y", "-qq", "mariadb-server", "mariadb-client"],
+            &[
+                "install",
+                "--only-upgrade",
+                "-y",
+                "-qq",
+                "mariadb-server",
+                "mariadb-client",
+            ],
             verbose,
         )
         .await?;
     }
 
     // Then MySQL
-    if shell::run_command("dpkg", &["-l", "mysql-server"]).await.is_ok() {
+    if shell::run_command("dpkg", &["-l", "mysql-server"])
+        .await
+        .is_ok()
+    {
         shell::run_command_with_output(
             "apt-get",
-            &["install", "--only-upgrade", "-y", "-qq", "mysql-server", "mysql-client"],
+            &[
+                "install",
+                "--only-upgrade",
+                "-y",
+                "-qq",
+                "mysql-server",
+                "mysql-client",
+            ],
             verbose,
         )
         .await?;
@@ -133,7 +156,9 @@ async fn update_redis(verbose: bool) -> Result<()> {
     )
     .await?;
 
-    shell::run_command("systemctl", &["reload", "redis-server"]).await.ok();
+    shell::run_command("systemctl", &["reload", "redis-server"])
+        .await
+        .ok();
 
     println!("  {} Redis updated", "✓".green());
     Ok(())
@@ -166,7 +191,11 @@ async fn update_nodejs(verbose: bool) -> Result<()> {
 }
 
 async fn update_security_tool(packages: &str, verbose: bool) -> Result<()> {
-    println!("  {} Updating {}...", "→".dimmed(), packages.split_whitespace().next().unwrap_or(packages));
+    println!(
+        "  {} Updating {}...",
+        "→".dimmed(),
+        packages.split_whitespace().next().unwrap_or(packages)
+    );
 
     let args: Vec<&str> = std::iter::once("install")
         .chain(std::iter::once("--only-upgrade"))
@@ -177,7 +206,11 @@ async fn update_security_tool(packages: &str, verbose: bool) -> Result<()> {
 
     shell::run_command_with_output("apt-get", &args, verbose).await?;
 
-    println!("  {} {} updated", "✓".green(), packages.split_whitespace().next().unwrap_or(packages));
+    println!(
+        "  {} {} updated",
+        "✓".green(),
+        packages.split_whitespace().next().unwrap_or(packages)
+    );
     Ok(())
 }
 
@@ -189,10 +222,12 @@ async fn update_mysqltuner(verbose: bool) -> Result<()> {
         &[
             "-sL",
             "https://raw.githubusercontent.com/major/MySQLTuner-perl/master/mysqltuner.pl",
-            "-o", "/usr/local/bin/mysqltuner",
+            "-o",
+            "/usr/local/bin/mysqltuner",
         ],
         verbose,
-    ).await?;
+    )
+    .await?;
 
     println!("  {} MySQLTuner updated", "✓".green());
     Ok(())
@@ -209,7 +244,9 @@ async fn update_auxiliary_tools(verbose: bool) -> Result<()> {
     shell::run_shell_script(acme_update, verbose).await.ok();
 
     // Update WP-CLI
-    shell::run_command("wp", &["cli", "update", "--yes"]).await.ok();
+    shell::run_command("wp", &["cli", "update", "--yes"])
+        .await
+        .ok();
 
     println!("  {} Auxiliary tools updated", "✓".green());
     Ok(())

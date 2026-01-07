@@ -98,10 +98,13 @@ struct HardwareInfo {
 
 async fn get_hardware_info() -> Result<HardwareInfo> {
     // CPU model
-    let cpu = shell::run_command("sh", &[
-        "-c",
-        "grep 'model name' /proc/cpuinfo | head -1 | cut -d':' -f2",
-    ])
+    let cpu = shell::run_command(
+        "sh",
+        &[
+            "-c",
+            "grep 'model name' /proc/cpuinfo | head -1 | cut -d':' -f2",
+        ],
+    )
     .await
     .map(|s| s.trim().to_string())
     .unwrap_or_else(|_| "Unknown".to_string());
@@ -113,19 +116,19 @@ async fn get_hardware_info() -> Result<HardwareInfo> {
         .unwrap_or_else(|_| "Unknown".to_string());
 
     // Memory
-    let memory = shell::run_command("sh", &[
-        "-c",
-        "free -h | grep Mem | awk '{print $2}'",
-    ])
-    .await
-    .map(|s| s.trim().to_string())
-    .unwrap_or_else(|_| "Unknown".to_string());
+    let memory = shell::run_command("sh", &["-c", "free -h | grep Mem | awk '{print $2}'"])
+        .await
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "Unknown".to_string());
 
     // Disk
-    let disk = shell::run_command("sh", &[
-        "-c",
-        "df -h / | tail -1 | awk '{print $2 \" total, \" $4 \" available\"}'",
-    ])
+    let disk = shell::run_command(
+        "sh",
+        &[
+            "-c",
+            "df -h / | tail -1 | awk '{print $2 \" total, \" $4 \" available\"}'",
+        ],
+    )
     .await
     .map(|s| s.trim().to_string())
     .unwrap_or_else(|_| "Unknown".to_string());

@@ -8,6 +8,7 @@ use crate::database;
 use crate::utils::{password, shell};
 use crate::Cli;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     domain: &str,
     site_type: SiteType,
@@ -118,9 +119,8 @@ pub async fn execute(
 }
 
 fn validate_domain(domain: &str) -> Result<()> {
-    let domain_regex = regex::Regex::new(
-        r"^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$",
-    )?;
+    let domain_regex =
+        regex::Regex::new(r"^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$")?;
 
     if !domain_regex.is_match(domain) {
         anyhow::bail!("Invalid domain format: {}", domain);
@@ -175,7 +175,7 @@ struct DbInfo {
 }
 
 async fn create_database(domain: &str) -> Result<DbInfo> {
-    let db_name = domain.replace('.', "_").replace('-', "_");
+    let db_name = domain.replace(['.', '-'], "_");
     let db_user = db_name.clone();
     let db_password = password::generate(32);
 
@@ -210,7 +210,12 @@ async fn install_wordpress(domain: &str, webroot: &str, db: &DbInfo, verbose: bo
     io::stdout().flush().ok();
     shell::run_command_with_output(
         "wp",
-        &["core", "download", &format!("--path={}", webroot), "--allow-root"],
+        &[
+            "core",
+            "download",
+            &format!("--path={}", webroot),
+            "--allow-root",
+        ],
         verbose,
     )
     .await?;
@@ -331,12 +336,23 @@ async fn set_permissions(domain: &str) -> Result<()> {
     let webroot = format!("/var/www/{}", domain);
 
     // Try to set ownership to www-data, fall back to root if www-data doesn't exist
-    if shell::run_command("chown", &["-R", "www-data:www-data", &webroot]).await.is_err() {
+    if shell::run_command("chown", &["-R", "www-data:www-data", &webroot])
+        .await
+        .is_err()
+    {
         shell::run_command("chown", &["-R", "root:root", &webroot]).await?;
     }
 
-    shell::run_command("find", &[&webroot, "-type", "d", "-exec", "chmod", "755", "{}", "+"]).await?;
-    shell::run_command("find", &[&webroot, "-type", "f", "-exec", "chmod", "644", "{}", "+"]).await?;
+    shell::run_command(
+        "find",
+        &[&webroot, "-type", "d", "-exec", "chmod", "755", "{}", "+"],
+    )
+    .await?;
+    shell::run_command(
+        "find",
+        &[&webroot, "-type", "f", "-exec", "chmod", "644", "{}", "+"],
+    )
+    .await?;
 
     Ok(())
 }
@@ -376,7 +392,8 @@ async fn issue_ssl(domain: &str, verbose: bool) -> Result<()> {
         crate::commands::ssl::KeyType::default(),
         false, // staging
         verbose,
-    ).await
+    )
+    .await
 }
 
 async fn issue_wildcard_ssl(domain: &str, provider: DnsProvider, verbose: bool) -> Result<()> {
@@ -392,15 +409,13 @@ async fn issue_wildcard_ssl(domain: &str, provider: DnsProvider, verbose: bool) 
         crate::commands::ssl::KeyType::default(),
         false, // staging
         verbose,
-    ).await
+    )
+    .await
 }
 
 fn print_summary(domain: &str, site_type: SiteType, db: &Option<DbInfo>, ssl: bool) {
     println!("\n{}", "━".repeat(50).dimmed());
-    println!(
-        "\n{} Site created successfully!\n",
-        "✓".green().bold()
-    );
+    println!("\n{} Site created successfully!\n", "✓".green().bold());
 
     let protocol = if ssl { "https" } else { "http" };
     println!("  {} URL: {}://{}", "→".bright_cyan(), protocol, domain);

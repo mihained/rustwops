@@ -11,10 +11,7 @@ pub struct StagingSite {
     pub last_sync_direction: Option<String>,
 }
 
-pub async fn create(
-    production_domain: &str,
-    staging_subdomain: &str,
-) -> Result<i64> {
+pub async fn create(production_domain: &str, staging_subdomain: &str) -> Result<i64> {
     let conn = super::get_connection()?;
     let conn = conn.lock().await;
 
@@ -113,10 +110,7 @@ pub async fn delete(production_domain: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn update_sync(
-    production_domain: &str,
-    direction: &str,
-) -> Result<()> {
+pub async fn update_sync(production_domain: &str, direction: &str) -> Result<()> {
     let conn = super::get_connection()?;
     let conn = conn.lock().await;
 

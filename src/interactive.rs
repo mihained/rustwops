@@ -125,7 +125,7 @@ async fn stack_install() -> Result<()> {
         "MySQL/MariaDB",
         "Redis",
         "Node.js",
-        "─────────────────",  // Separator
+        "─────────────────", // Separator
         "Fail2Ban (intrusion prevention)",
         "ClamAV (antivirus)",
         "MySQLTuner (database optimizer)",
@@ -195,7 +195,8 @@ async fn stack_install() -> Result<()> {
     // Confirm
     println!("\n{} Installation Summary:", "→".bright_cyan());
     for &idx in &selections {
-        if idx != 5 {  // Skip separator
+        if idx != 5 {
+            // Skip separator
             println!("  • {}", components[idx]);
         }
     }
@@ -302,7 +303,11 @@ async fn stack_remove() -> Result<()> {
 }
 
 async fn stack_update() -> Result<()> {
-    let items = vec!["Update all components", "Select specific components", "← Back"];
+    let items = vec![
+        "Update all components",
+        "Select specific components",
+        "← Back",
+    ];
 
     let selection = Select::with_theme(&ColorfulTheme::default())
         .with_prompt("Update Stack")
@@ -413,14 +418,16 @@ async fn security_menu() -> Result<()> {
                 commands::security::execute(
                     commands::security::SecurityCommand::Status,
                     &create_cli(false, false),
-                ).await?;
+                )
+                .await?;
                 press_enter_to_continue()?;
             }
             1 => {
                 commands::security::execute(
                     commands::security::SecurityCommand::Mysqltuner,
                     &create_cli(true, false),
-                ).await?;
+                )
+                .await?;
                 press_enter_to_continue()?;
             }
             2 => {
@@ -430,7 +437,8 @@ async fn security_menu() -> Result<()> {
                 commands::security::execute(
                     commands::security::SecurityCommand::UpdateDefinitions,
                     &create_cli(true, false),
-                ).await?;
+                )
+                .await?;
                 press_enter_to_continue()?;
             }
             4 => {
@@ -458,7 +466,8 @@ async fn clamav_scan_menu() -> Result<()> {
             quarantine,
         },
         &create_cli(true, false),
-    ).await?;
+    )
+    .await?;
 
     press_enter_to_continue()?;
     Ok(())
@@ -488,7 +497,8 @@ async fn fail2ban_menu() -> Result<()> {
                         action: commands::security::Fail2banAction::Status,
                     },
                     &create_cli(false, false),
-                ).await?;
+                )
+                .await?;
                 press_enter_to_continue()?;
             }
             1 => {
@@ -497,7 +507,8 @@ async fn fail2ban_menu() -> Result<()> {
                         action: commands::security::Fail2banAction::Banned,
                     },
                     &create_cli(false, false),
-                ).await?;
+                )
+                .await?;
                 press_enter_to_continue()?;
             }
             2 => {
@@ -507,13 +518,11 @@ async fn fail2ban_menu() -> Result<()> {
 
                 commands::security::execute(
                     commands::security::SecurityCommand::Fail2ban {
-                        action: commands::security::Fail2banAction::Unban {
-                            ip,
-                            jail: None,
-                        },
+                        action: commands::security::Fail2banAction::Unban { ip, jail: None },
                     },
                     &create_cli(false, false),
-                ).await?;
+                )
+                .await?;
                 press_enter_to_continue()?;
             }
             3 => {
@@ -521,7 +530,14 @@ async fn fail2ban_menu() -> Result<()> {
                     .with_prompt("IP address to ban")
                     .interact_text()?;
 
-                let jails = vec!["sshd", "nginx-http-auth", "nginx-botsearch", "nginx-forbidden", "wordpress", "recidive"];
+                let jails = vec![
+                    "sshd",
+                    "nginx-http-auth",
+                    "nginx-botsearch",
+                    "nginx-forbidden",
+                    "wordpress",
+                    "recidive",
+                ];
                 let jail_idx = Select::with_theme(&ColorfulTheme::default())
                     .with_prompt("Select jail")
                     .items(&jails)
@@ -536,7 +552,8 @@ async fn fail2ban_menu() -> Result<()> {
                         },
                     },
                     &create_cli(false, false),
-                ).await?;
+                )
+                .await?;
                 press_enter_to_continue()?;
             }
             4 => {
@@ -545,7 +562,8 @@ async fn fail2ban_menu() -> Result<()> {
                         action: commands::security::Fail2banAction::Logs { lines: 50 },
                     },
                     &create_cli(false, false),
-                ).await?;
+                )
+                .await?;
                 press_enter_to_continue()?;
             }
             _ => return Ok(()),
@@ -564,7 +582,10 @@ async fn site_menu() -> Result<()> {
         let staging_entries = crate::database::staging::list().await?;
 
         // Filter out staging sites - only show production sites
-        let staging_domains: Vec<&str> = staging_entries.iter().map(|s| s.staging_domain.as_str()).collect();
+        let staging_domains: Vec<&str> = staging_entries
+            .iter()
+            .map(|s| s.staging_domain.as_str())
+            .collect();
         let sites: Vec<_> = all_sites
             .into_iter()
             .filter(|s| !staging_domains.contains(&s.domain.as_str()))
@@ -591,9 +612,16 @@ async fn site_menu() -> Result<()> {
         let mut items: Vec<String> = sites
             .iter()
             .map(|s| {
-                let has_staging = staging_entries.iter().any(|st| st.production_site_id == s.id);
+                let has_staging = staging_entries
+                    .iter()
+                    .any(|st| st.production_site_id == s.id);
                 let staging_indicator = if has_staging { " [+staging]" } else { "" };
-                format!("{:<30} {:>8}{}", s.domain, s.site_type.to_uppercase(), staging_indicator)
+                format!(
+                    "{:<30} {:>8}{}",
+                    s.domain,
+                    s.site_type.to_uppercase(),
+                    staging_indicator
+                )
             })
             .collect();
 
@@ -622,13 +650,12 @@ async fn site_actions_menu(site: &crate::database::sites::Site) -> Result<()> {
 
     // Check if this site has a staging environment
     let staging_entries = crate::database::staging::list().await?;
-    let has_staging = staging_entries.iter().any(|s| s.production_site_id == site.id);
+    let has_staging = staging_entries
+        .iter()
+        .any(|s| s.production_site_id == site.id);
 
     loop {
-        let mut items = vec![
-            "Site info".to_string(),
-            "SSL certificate".to_string(),
-        ];
+        let mut items = vec!["Site info".to_string(), "SSL certificate".to_string()];
 
         // Staging option
         if has_staging {
@@ -647,7 +674,11 @@ async fn site_actions_menu(site: &crate::database::sites::Site) -> Result<()> {
         items.push("Back".to_string());
 
         let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt(format!("{} ({})", site.domain, site.site_type.to_uppercase()))
+            .with_prompt(format!(
+                "{} ({})",
+                site.domain,
+                site.site_type.to_uppercase()
+            ))
             .items(&items)
             .default(0)
             .interact()?;
@@ -655,7 +686,8 @@ async fn site_actions_menu(site: &crate::database::sites::Site) -> Result<()> {
         // Calculate action index
         let mut idx = 0;
 
-        if selection == idx { // Site info
+        if selection == idx {
+            // Site info
             let cli = create_cli(false, false);
             commands::site::info::execute(&site.domain, &cli).await?;
             press_enter_to_continue()?;
@@ -663,13 +695,15 @@ async fn site_actions_menu(site: &crate::database::sites::Site) -> Result<()> {
         }
         idx += 1;
 
-        if selection == idx { // SSL
+        if selection == idx {
+            // SSL
             site_ssl_menu(&site.domain).await?;
             continue;
         }
         idx += 1;
 
-        if selection == idx { // Staging
+        if selection == idx {
+            // Staging
             if has_staging {
                 site_staging_menu(site).await?;
             } else {
@@ -681,20 +715,23 @@ async fn site_actions_menu(site: &crate::database::sites::Site) -> Result<()> {
         idx += 1;
 
         if is_wordpress {
-            if selection == idx { // Reset password
+            if selection == idx {
+                // Reset password
                 wp_reset_password(&site.domain).await?;
                 continue;
             }
             idx += 1;
 
-            if selection == idx { // WP-CLI
+            if selection == idx {
+                // WP-CLI
                 wp_cli_shell(&site.domain).await?;
                 continue;
             }
             idx += 1;
         }
 
-        if selection == idx { // Delete
+        if selection == idx {
+            // Delete
             site_delete_confirm(&site.domain).await?;
             return Ok(());
         }
@@ -732,7 +769,8 @@ async fn create_staging_for_site(site: &crate::database::sites::Site) -> Result<
             prefix,
         },
         &cli,
-    ).await?;
+    )
+    .await?;
 
     press_enter_to_continue()?;
     Ok(())
@@ -740,11 +778,7 @@ async fn create_staging_for_site(site: &crate::database::sites::Site) -> Result<
 
 async fn site_ssl_menu(domain: &str) -> Result<()> {
     loop {
-        let items = vec![
-            "Issue/renew certificate",
-            "Show SSL status",
-            "Back",
-        ];
+        let items = vec!["Issue/renew certificate", "Show SSL status", "Back"];
 
         let selection = Select::with_theme(&ColorfulTheme::default())
             .with_prompt(format!("SSL for {}", domain))
@@ -779,14 +813,16 @@ async fn site_ssl_menu(domain: &str) -> Result<()> {
                         commands::ssl::KeyType::default(),
                         false, // staging
                         true,  // verbose
-                    ).await?;
+                    )
+                    .await?;
                 } else {
                     commands::ssl::issue::execute_http(
                         domain,
                         commands::ssl::KeyType::default(),
                         false, // staging
                         true,  // verbose
-                    ).await?;
+                    )
+                    .await?;
                 }
                 press_enter_to_continue()?;
             }
@@ -805,7 +841,9 @@ async fn site_staging_menu(site: &crate::database::sites::Site) -> Result<()> {
 
     // Get staging info
     let staging_entries = crate::database::staging::list().await?;
-    let staging_entry = staging_entries.iter().find(|s| s.production_site_id == site.id);
+    let staging_entry = staging_entries
+        .iter()
+        .find(|s| s.production_site_id == site.id);
 
     let staging_domain = match staging_entry {
         Some(s) => s.staging_domain.clone(),
@@ -836,20 +874,23 @@ async fn site_staging_menu(site: &crate::database::sites::Site) -> Result<()> {
 
         let mut idx = 0;
 
-        if selection == idx { // Staging info
+        if selection == idx {
+            // Staging info
             let cli = create_cli(false, false);
             commands::staging::execute(
                 commands::staging::StagingCommand::Info {
                     domain: site.domain.clone(),
                 },
                 &cli,
-            ).await?;
+            )
+            .await?;
             press_enter_to_continue()?;
             continue;
         }
         idx += 1;
 
-        if selection == idx { // Sync prod -> staging
+        if selection == idx {
+            // Sync prod -> staging
             let cli = create_cli(false, true);
             commands::staging::execute(
                 commands::staging::StagingCommand::Sync {
@@ -861,14 +902,19 @@ async fn site_staging_menu(site: &crate::database::sites::Site) -> Result<()> {
                     dry_run: false,
                 },
                 &cli,
-            ).await?;
+            )
+            .await?;
             press_enter_to_continue()?;
             continue;
         }
         idx += 1;
 
-        if selection == idx { // Promote staging -> prod
-            println!("\n{} This will overwrite production with staging data!", "WARNING:".red().bold());
+        if selection == idx {
+            // Promote staging -> prod
+            println!(
+                "\n{} This will overwrite production with staging data!",
+                "WARNING:".red().bold()
+            );
             let confirm = Confirm::with_theme(&ColorfulTheme::default())
                 .with_prompt("Are you absolutely sure?")
                 .default(false)
@@ -886,7 +932,8 @@ async fn site_staging_menu(site: &crate::database::sites::Site) -> Result<()> {
                         dry_run: false,
                     },
                     &cli,
-                ).await?;
+                )
+                .await?;
             }
             press_enter_to_continue()?;
             continue;
@@ -894,20 +941,23 @@ async fn site_staging_menu(site: &crate::database::sites::Site) -> Result<()> {
         idx += 1;
 
         if is_wordpress {
-            if selection == idx { // Reset staging password
+            if selection == idx {
+                // Reset staging password
                 wp_reset_password(&staging_domain).await?;
                 continue;
             }
             idx += 1;
 
-            if selection == idx { // Staging WP-CLI
+            if selection == idx {
+                // Staging WP-CLI
                 wp_cli_shell(&staging_domain).await?;
                 continue;
             }
             idx += 1;
         }
 
-        if selection == idx { // Delete staging
+        if selection == idx {
+            // Delete staging
             let confirm = Confirm::with_theme(&ColorfulTheme::default())
                 .with_prompt("Delete staging environment?")
                 .default(false)
@@ -920,7 +970,8 @@ async fn site_staging_menu(site: &crate::database::sites::Site) -> Result<()> {
                         domain: site.domain.clone(),
                     },
                     &cli,
-                ).await?;
+                )
+                .await?;
                 press_enter_to_continue()?;
                 return Ok(());
             }
@@ -933,7 +984,10 @@ async fn site_staging_menu(site: &crate::database::sites::Site) -> Result<()> {
 }
 
 async fn wp_reset_password(domain: &str) -> Result<()> {
-    println!("\n{} Reset WordPress Admin Password\n", "→".bright_cyan().bold());
+    println!(
+        "\n{} Reset WordPress Admin Password\n",
+        "→".bright_cyan().bold()
+    );
 
     // Get the actual webroot from the database
     let site = crate::database::sites::get_by_domain(domain).await?;
@@ -966,7 +1020,11 @@ async fn wp_reset_password(domain: &str) -> Result<()> {
                 charset[idx] as char
             })
             .collect();
-        println!("\n{} Generated password: {}\n", "→".bright_cyan(), generated.bright_white().bold());
+        println!(
+            "\n{} Generated password: {}\n",
+            "→".bright_cyan(),
+            generated.bright_white().bold()
+        );
         generated
     } else {
         password
@@ -1153,7 +1211,7 @@ async fn site_create() -> Result<()> {
         }
 
         // Build version list showing which are installed
-        let all_versions = vec!["8.4", "8.3", "8.2", "8.1", "8.0", "7.4"];
+        let all_versions = ["8.4", "8.3", "8.2", "8.1", "8.0", "7.4"];
         let version_items: Vec<String> = all_versions
             .iter()
             .map(|v| {
@@ -1175,8 +1233,15 @@ async fn site_create() -> Result<()> {
 
         // Check if selected version is installed
         if !installed.contains(&selected_version) {
-            println!("\n{} PHP {} is not installed!", "Error:".red().bold(), selected_version);
-            println!("  Install it with: rw stack install php --php-version {}\n", selected_version);
+            println!(
+                "\n{} PHP {} is not installed!",
+                "Error:".red().bold(),
+                selected_version
+            );
+            println!(
+                "  Install it with: rw stack install php --php-version {}\n",
+                selected_version
+            );
             return Ok(());
         }
 
@@ -1294,7 +1359,6 @@ async fn site_create() -> Result<()> {
     Ok(())
 }
 
-
 // ============================================================================
 // Service Menu
 // ============================================================================
@@ -1318,22 +1382,33 @@ async fn service_menu() -> Result<()> {
     match selection {
         0 => {
             let cli = create_cli(false, false);
-            commands::service::execute(commands::service::ServiceCommand::Status { service: None }, &cli).await?;
+            commands::service::execute(
+                commands::service::ServiceCommand::Status { service: None },
+                &cli,
+            )
+            .await?;
             press_enter_to_continue()?;
         }
         1..=4 => {
             // Build dynamic service list based on what's installed
-            let mut services = vec!["nginx".to_string(), "mariadb".to_string(), "redis-server".to_string()];
+            let mut services = vec![
+                "nginx".to_string(),
+                "mariadb".to_string(),
+                "redis-server".to_string(),
+            ];
 
             // Check for installed PHP versions
             let php_versions = ["8.4", "8.3", "8.2", "8.1", "8.0", "7.4"];
             for version in php_versions {
                 let service = format!("php{}-fpm", version);
                 // Check if the service exists by trying to get its status
-                if crate::utils::shell::run_command("systemctl", &["list-unit-files", &format!("{}.service", service)])
-                    .await
-                    .map(|output| output.contains(&service))
-                    .unwrap_or(false)
+                if crate::utils::shell::run_command(
+                    "systemctl",
+                    &["list-unit-files", &format!("{}.service", service)],
+                )
+                .await
+                .map(|output| output.contains(&service))
+                .unwrap_or(false)
                 {
                     services.push(service);
                 }

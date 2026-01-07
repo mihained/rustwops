@@ -27,9 +27,12 @@ pub async fn execute(cli: &Cli) -> Result<()> {
     for version in &["7.4", "8.0", "8.1", "8.2", "8.3", "8.4"] {
         let service_name = format!("php{}-fpm", version);
         if is_service_installed(&service_name).await {
-            services.push(check_service(&format!("PHP {}", version), &service_name, || {
-                Box::pin(async move { get_php_version(version).await })
-            }).await);
+            services.push(
+                check_service(&format!("PHP {}", version), &service_name, || {
+                    Box::pin(async move { get_php_version(version).await })
+                })
+                .await,
+            );
         }
     }
 
@@ -64,7 +67,9 @@ where
 {
     let status = get_service_status(service).await;
     let version = if status.contains("running") {
-        get_version().await.unwrap_or_else(|_| "unknown".to_string())
+        get_version()
+            .await
+            .unwrap_or_else(|_| "unknown".to_string())
     } else {
         "-".to_string()
     };
@@ -85,10 +90,13 @@ async fn get_service_status(service: &str) -> String {
 }
 
 async fn is_service_installed(service: &str) -> bool {
-    shell::run_command("systemctl", &["list-unit-files", &format!("{}.service", service)])
-        .await
-        .map(|o| o.contains(service))
-        .unwrap_or(false)
+    shell::run_command(
+        "systemctl",
+        &["list-unit-files", &format!("{}.service", service)],
+    )
+    .await
+    .map(|o| o.contains(service))
+    .unwrap_or(false)
 }
 
 async fn get_nginx_version() -> Result<String> {

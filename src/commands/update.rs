@@ -6,10 +6,7 @@ use crate::Cli;
 const GITHUB_REPO: &str = "rustwops/rustwops";
 
 pub async fn execute(check_only: bool, _cli: &Cli) -> Result<()> {
-    println!(
-        "{} Checking for updates...\n",
-        "→".bright_cyan().bold()
-    );
+    println!("{} Checking for updates...\n", "→".bright_cyan().bold());
 
     let current_version = env!("CARGO_PKG_VERSION");
     println!("  Current version: {}", current_version.bright_white());
@@ -104,10 +101,7 @@ async fn check_latest_version() -> Result<LatestRelease> {
         .unwrap_or("")
         .to_string();
 
-    let release_notes = response["body"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let release_notes = response["body"].as_str().unwrap_or("").to_string();
 
     Ok(LatestRelease {
         version,
@@ -139,18 +133,10 @@ async fn download_and_install(url: &str) -> Result<()> {
     let backup_path = format!("{}.bak", current_exe.display());
 
     // Backup current binary
-    crate::utils::shell::run_command(
-        "cp",
-        &[current_exe.to_str().unwrap(), &backup_path],
-    )
-    .await?;
+    crate::utils::shell::run_command("cp", &[current_exe.to_str().unwrap(), &backup_path]).await?;
 
     // Replace with new binary
-    crate::utils::shell::run_command(
-        "mv",
-        &[temp_path, current_exe.to_str().unwrap()],
-    )
-    .await?;
+    crate::utils::shell::run_command("mv", &[temp_path, current_exe.to_str().unwrap()]).await?;
 
     Ok(())
 }

@@ -31,9 +31,19 @@ pub async fn execute(components: Vec<Component>, purge: bool, cli: &Cli) -> Resu
             Component::Mysql => remove_database(purge, cli.verbose).await?,
             Component::Redis => remove_redis(purge, cli.verbose).await?,
             Component::Nodejs => remove_nodejs(purge, cli.verbose).await?,
-            Component::Fail2ban => remove_security_tool("fail2ban", "fail2ban", purge, cli.verbose).await?,
+            Component::Fail2ban => {
+                remove_security_tool("fail2ban", "fail2ban", purge, cli.verbose).await?
+            }
             Component::Mysqltuner => remove_mysqltuner(cli.verbose).await?,
-            Component::Clamav => remove_security_tool("clamav-daemon", "clamav clamav-daemon clamav-freshclam", purge, cli.verbose).await?,
+            Component::Clamav => {
+                remove_security_tool(
+                    "clamav-daemon",
+                    "clamav clamav-daemon clamav-freshclam",
+                    purge,
+                    cli.verbose,
+                )
+                .await?
+            }
         }
     }
 
@@ -48,8 +58,12 @@ pub async fn execute(components: Vec<Component>, purge: bool, cli: &Cli) -> Resu
 async fn remove_nginx(purge: bool, verbose: bool) -> Result<()> {
     println!("  {} Removing Nginx...", "→".dimmed());
 
-    shell::run_command("systemctl", &["stop", "nginx"]).await.ok();
-    shell::run_command("systemctl", &["disable", "nginx"]).await.ok();
+    shell::run_command("systemctl", &["stop", "nginx"])
+        .await
+        .ok();
+    shell::run_command("systemctl", &["disable", "nginx"])
+        .await
+        .ok();
 
     let cmd = if purge { "purge" } else { "remove" };
     shell::run_command_with_output("apt-get", &[cmd, "-y", "-qq", "nginx"], verbose).await?;
@@ -68,8 +82,12 @@ async fn remove_php(purge: bool, verbose: bool) -> Result<()> {
     // Stop all PHP-FPM services
     for version in &["7.4", "8.0", "8.1", "8.2", "8.3", "8.4"] {
         let service = format!("php{}-fpm", version);
-        shell::run_command("systemctl", &["stop", &service]).await.ok();
-        shell::run_command("systemctl", &["disable", &service]).await.ok();
+        shell::run_command("systemctl", &["stop", &service])
+            .await
+            .ok();
+        shell::run_command("systemctl", &["disable", &service])
+            .await
+            .ok();
     }
 
     let cmd = if purge { "purge" } else { "remove" };
@@ -87,24 +105,42 @@ async fn remove_database(purge: bool, verbose: bool) -> Result<()> {
     println!("  {} Removing database server...", "→".dimmed());
 
     // Try MariaDB first
-    shell::run_command("systemctl", &["stop", "mariadb"]).await.ok();
-    shell::run_command("systemctl", &["disable", "mariadb"]).await.ok();
+    shell::run_command("systemctl", &["stop", "mariadb"])
+        .await
+        .ok();
+    shell::run_command("systemctl", &["disable", "mariadb"])
+        .await
+        .ok();
 
     // Then MySQL
-    shell::run_command("systemctl", &["stop", "mysql"]).await.ok();
-    shell::run_command("systemctl", &["disable", "mysql"]).await.ok();
+    shell::run_command("systemctl", &["stop", "mysql"])
+        .await
+        .ok();
+    shell::run_command("systemctl", &["disable", "mysql"])
+        .await
+        .ok();
 
     let cmd = if purge { "purge" } else { "remove" };
     shell::run_command_with_output(
         "apt-get",
-        &[cmd, "-y", "-qq", "mariadb-server", "mariadb-client", "mysql-server", "mysql-client"],
+        &[
+            cmd,
+            "-y",
+            "-qq",
+            "mariadb-server",
+            "mariadb-client",
+            "mysql-server",
+            "mysql-client",
+        ],
         verbose,
     )
     .await
     .ok();
 
     if purge {
-        shell::run_command("rm", &["-rf", "/var/lib/mysql"]).await.ok();
+        shell::run_command("rm", &["-rf", "/var/lib/mysql"])
+            .await
+            .ok();
         shell::run_command("rm", &["-rf", "/etc/mysql"]).await.ok();
     }
 
@@ -115,14 +151,20 @@ async fn remove_database(purge: bool, verbose: bool) -> Result<()> {
 async fn remove_redis(purge: bool, verbose: bool) -> Result<()> {
     println!("  {} Removing Redis...", "→".dimmed());
 
-    shell::run_command("systemctl", &["stop", "redis-server"]).await.ok();
-    shell::run_command("systemctl", &["disable", "redis-server"]).await.ok();
+    shell::run_command("systemctl", &["stop", "redis-server"])
+        .await
+        .ok();
+    shell::run_command("systemctl", &["disable", "redis-server"])
+        .await
+        .ok();
 
     let cmd = if purge { "purge" } else { "remove" };
     shell::run_command_with_output("apt-get", &[cmd, "-y", "-qq", "redis-server"], verbose).await?;
 
     if purge {
-        shell::run_command("rm", &["-rf", "/var/lib/redis"]).await.ok();
+        shell::run_command("rm", &["-rf", "/var/lib/redis"])
+            .await
+            .ok();
         shell::run_command("rm", &["-rf", "/etc/redis"]).await.ok();
     }
 
@@ -153,19 +195,30 @@ async fn remove_nodejs(purge: bool, verbose: bool) -> Result<()> {
     Ok(())
 }
 
-async fn remove_security_tool(service: &str, packages: &str, purge: bool, verbose: bool) -> Result<()> {
+async fn remove_security_tool(
+    service: &str,
+    packages: &str,
+    purge: bool,
+    verbose: bool,
+) -> Result<()> {
     let name = packages.split_whitespace().next().unwrap_or(packages);
     println!("  {} Removing {}...", "→".dimmed(), name);
 
     // Stop and disable service
-    shell::run_command("systemctl", &["stop", service]).await.ok();
-    shell::run_command("systemctl", &["disable", service]).await.ok();
+    shell::run_command("systemctl", &["stop", service])
+        .await
+        .ok();
+    shell::run_command("systemctl", &["disable", service])
+        .await
+        .ok();
 
     let cmd = if purge { "purge" } else { "remove" };
     let mut args = vec![cmd, "-y", "-qq"];
     args.extend(packages.split_whitespace());
 
-    shell::run_command_with_output("apt-get", &args, verbose).await.ok();
+    shell::run_command_with_output("apt-get", &args, verbose)
+        .await
+        .ok();
 
     println!("  {} {} removed", "✓".green(), name);
     Ok(())
@@ -174,7 +227,9 @@ async fn remove_security_tool(service: &str, packages: &str, purge: bool, verbos
 async fn remove_mysqltuner(_verbose: bool) -> Result<()> {
     println!("  {} Removing MySQLTuner...", "→".dimmed());
 
-    shell::run_command("rm", &["-f", "/usr/local/bin/mysqltuner"]).await.ok();
+    shell::run_command("rm", &["-f", "/usr/local/bin/mysqltuner"])
+        .await
+        .ok();
 
     println!("  {} MySQLTuner removed", "✓".green());
     Ok(())

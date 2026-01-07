@@ -40,7 +40,8 @@ pub fn get_connection() -> Result<&'static Mutex<Connection>> {
         let _ = DB.set(Mutex::new(conn));
     }
 
-    DB.get().ok_or_else(|| anyhow::anyhow!("Database initialization failed"))
+    DB.get()
+        .ok_or_else(|| anyhow::anyhow!("Database initialization failed"))
 }
 
 /// Initialize database if needed (for testing or first run)

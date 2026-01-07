@@ -6,13 +6,7 @@ use crate::database;
 use crate::utils::shell;
 use crate::Cli;
 
-pub async fn execute(
-    domain: &str,
-    all: bool,
-    files: bool,
-    db: bool,
-    cli: &Cli,
-) -> Result<()> {
+pub async fn execute(domain: &str, all: bool, files: bool, db: bool, cli: &Cli) -> Result<()> {
     println!(
         "{} Deleting site: {}\n",
         "→".bright_cyan().bold(),
@@ -42,10 +36,7 @@ pub async fn execute(
             msg.push_str(" (database)");
         }
 
-        let confirm = Confirm::new()
-            .with_prompt(&msg)
-            .default(false)
-            .interact()?;
+        let confirm = Confirm::new().with_prompt(&msg).default(false).interact()?;
 
         if !confirm {
             println!("{}", "Aborted.".yellow());

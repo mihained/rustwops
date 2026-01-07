@@ -94,10 +94,7 @@ async fn run_mysqltuner(verbose: bool) -> Result<()> {
 
     // Check if mysqltuner is installed
     if !std::path::Path::new("/usr/local/bin/mysqltuner").exists() {
-        println!(
-            "{} MySQLTuner is not installed.",
-            "✗".red().bold()
-        );
+        println!("{} MySQLTuner is not installed.", "✗".red().bold());
         println!("  Install it with: rw stack install mysqltuner\n");
         return Ok(());
     }
@@ -124,24 +121,21 @@ async fn run_clamav_scan(path: Option<&str>, quarantine: bool, verbose: bool) ->
 
     // Check if clamav is installed
     if shell::run_command("which", &["clamscan"]).await.is_err() {
-        println!(
-            "{} ClamAV is not installed.",
-            "✗".red().bold()
-        );
+        println!("{} ClamAV is not installed.", "✗".red().bold());
         println!("  Install it with: rw stack install clamav\n");
         return Ok(());
     }
 
-    let mut args = vec![
-        "--infected".to_string(),
-        "--recursive".to_string(),
-    ];
+    let mut args = vec!["--infected".to_string(), "--recursive".to_string()];
 
     if quarantine {
         // Ensure quarantine directory exists
         shell::run_command("mkdir", &["-p", "/var/lib/rustwops/quarantine"]).await?;
         args.push("--move=/var/lib/rustwops/quarantine".to_string());
-        println!("  {} Infected files will be moved to quarantine\n", "→".dimmed());
+        println!(
+            "  {} Infected files will be moved to quarantine\n",
+            "→".dimmed()
+        );
     }
 
     args.push(scan_path.to_string());
@@ -154,10 +148,7 @@ async fn run_clamav_scan(path: Option<&str>, quarantine: bool, verbose: bool) ->
 
     // Check for infections in the output
     if output.contains("Infected files: 0") {
-        println!(
-            "\n{} No threats found!\n",
-            "✓".green().bold()
-        );
+        println!("\n{} No threats found!\n", "✓".green().bold());
     } else if output.contains("Infected files:") {
         println!(
             "\n{} Threats detected! Review the output above.\n",
@@ -179,17 +170,16 @@ async fn update_clamav_definitions(verbose: bool) -> Result<()> {
 
     // Check if freshclam is installed
     if shell::run_command("which", &["freshclam"]).await.is_err() {
-        println!(
-            "{} ClamAV is not installed.",
-            "✗".red().bold()
-        );
+        println!("{} ClamAV is not installed.", "✗".red().bold());
         println!("  Install it with: rw stack install clamav\n");
         return Ok(());
     }
 
     // Stop freshclam service temporarily
     println!("  {} Stopping freshclam service...", "→".dimmed());
-    shell::run_command("systemctl", &["stop", "clamav-freshclam"]).await.ok();
+    shell::run_command("systemctl", &["stop", "clamav-freshclam"])
+        .await
+        .ok();
 
     // Run freshclam
     println!("  {} Downloading latest definitions...", "→".dimmed());
@@ -197,7 +187,9 @@ async fn update_clamav_definitions(verbose: bool) -> Result<()> {
 
     // Restart freshclam service
     println!("  {} Restarting freshclam service...", "→".dimmed());
-    shell::run_command("systemctl", &["start", "clamav-freshclam"]).await.ok();
+    shell::run_command("systemctl", &["start", "clamav-freshclam"])
+        .await
+        .ok();
 
     match result {
         Ok(output) => {
@@ -225,21 +217,18 @@ async fn update_clamav_definitions(verbose: bool) -> Result<()> {
 
 async fn execute_fail2ban(action: Fail2banAction, _verbose: bool) -> Result<()> {
     // Check if fail2ban is installed
-    if shell::run_command("which", &["fail2ban-client"]).await.is_err() {
-        println!(
-            "{} Fail2Ban is not installed.",
-            "✗".red().bold()
-        );
+    if shell::run_command("which", &["fail2ban-client"])
+        .await
+        .is_err()
+    {
+        println!("{} Fail2Ban is not installed.", "✗".red().bold());
         println!("  Install it with: rw stack install fail2ban\n");
         return Ok(());
     }
 
     match action {
         Fail2banAction::Status => {
-            println!(
-                "{} Fail2Ban Status\n",
-                "→".bright_cyan().bold()
-            );
+            println!("{} Fail2Ban Status\n", "→".bright_cyan().bold());
 
             let output = shell::run_command("fail2ban-client", &["status"]).await?;
             println!("{}\n", output);
@@ -258,10 +247,13 @@ async fn execute_fail2ban(action: Fail2banAction, _verbose: bool) -> Result<()> 
 
                 for jail in jails {
                     println!("{} Jail: {}", "─".dimmed(), jail.bright_white());
-                    if let Ok(status) = shell::run_command("fail2ban-client", &["status", jail]).await {
+                    if let Ok(status) =
+                        shell::run_command("fail2ban-client", &["status", jail]).await
+                    {
                         // Extract just the key info
                         for line in status.lines() {
-                            if line.contains("Currently banned:") || line.contains("Total banned:") {
+                            if line.contains("Currently banned:") || line.contains("Total banned:")
+                            {
                                 println!("  {}", line.trim());
                             }
                         }
@@ -272,10 +264,7 @@ async fn execute_fail2ban(action: Fail2banAction, _verbose: bool) -> Result<()> 
         }
 
         Fail2banAction::Banned => {
-            println!(
-                "{} Currently Banned IPs\n",
-                "→".bright_cyan().bold()
-            );
+            println!("{} Currently Banned IPs\n", "→".bright_cyan().bold());
 
             let output = shell::run_command("fail2ban-client", &["status"]).await?;
             let jails_line = output.lines().find(|l| l.contains("Jail list:"));
@@ -293,7 +282,9 @@ async fn execute_fail2ban(action: Fail2banAction, _verbose: bool) -> Result<()> 
                 let mut any_banned = false;
 
                 for jail in jails {
-                    if let Ok(status) = shell::run_command("fail2ban-client", &["status", jail]).await {
+                    if let Ok(status) =
+                        shell::run_command("fail2ban-client", &["status", jail]).await
+                    {
                         for line in status.lines() {
                             if line.contains("Banned IP list:") {
                                 let ips = line.split(':').nth(1).unwrap_or("").trim();
@@ -349,9 +340,12 @@ async fn execute_fail2ban(action: Fail2banAction, _verbose: bool) -> Result<()> 
                         .collect();
 
                     for jail_name in jails {
-                        if shell::run_command("fail2ban-client", &["set", jail_name, "unbanip", &ip])
-                            .await
-                            .is_ok()
+                        if shell::run_command(
+                            "fail2ban-client",
+                            &["set", jail_name, "unbanip", &ip],
+                        )
+                        .await
+                        .is_ok()
                         {
                             println!("  {} Unbanned from {}", "✓".green(), jail_name);
                         }
@@ -370,12 +364,7 @@ async fn execute_fail2ban(action: Fail2banAction, _verbose: bool) -> Result<()> 
             );
 
             shell::run_command("fail2ban-client", &["set", &jail, "banip", &ip]).await?;
-            println!(
-                "{} Banned {} in jail {}\n",
-                "✓".green().bold(),
-                ip,
-                jail
-            );
+            println!("{} Banned {} in jail {}\n", "✓".green().bold(), ip, jail);
         }
 
         Fail2banAction::Logs { lines } => {
@@ -385,11 +374,9 @@ async fn execute_fail2ban(action: Fail2banAction, _verbose: bool) -> Result<()> 
                 lines
             );
 
-            let output = shell::run_command(
-                "tail",
-                &["-n", &lines.to_string(), "/var/log/fail2ban.log"],
-            )
-            .await?;
+            let output =
+                shell::run_command("tail", &["-n", &lines.to_string(), "/var/log/fail2ban.log"])
+                    .await?;
 
             println!("{}\n", output);
         }
@@ -403,15 +390,17 @@ async fn execute_fail2ban(action: Fail2banAction, _verbose: bool) -> Result<()> 
 // =============================================================================
 
 async fn show_security_status(_verbose: bool) -> Result<()> {
-    println!(
-        "{} Security Tools Status\n",
-        "→".bright_cyan().bold()
-    );
+    println!("{} Security Tools Status\n", "→".bright_cyan().bold());
 
     // Fail2Ban
     print!("  {} Fail2Ban: ", "→".dimmed());
-    if shell::run_command("systemctl", &["is-active", "fail2ban"]).await.is_ok() {
-        let output = shell::run_command("fail2ban-client", &["status"]).await.unwrap_or_default();
+    if shell::run_command("systemctl", &["is-active", "fail2ban"])
+        .await
+        .is_ok()
+    {
+        let output = shell::run_command("fail2ban-client", &["status"])
+            .await
+            .unwrap_or_default();
         let jail_count = output
             .lines()
             .find(|l| l.contains("Number of jail:"))
@@ -427,7 +416,10 @@ async fn show_security_status(_verbose: bool) -> Result<()> {
 
     // ClamAV
     print!("  {} ClamAV:   ", "→".dimmed());
-    if shell::run_command("systemctl", &["is-active", "clamav-freshclam"]).await.is_ok() {
+    if shell::run_command("systemctl", &["is-active", "clamav-freshclam"])
+        .await
+        .is_ok()
+    {
         // Get version
         let version = shell::run_command("clamscan", &["--version"])
             .await
@@ -455,11 +447,7 @@ async fn show_security_status(_verbose: bool) -> Result<()> {
             .map(|entries| entries.count())
             .unwrap_or(0);
         if count > 0 {
-            println!(
-                "\n  {} {} files in quarantine",
-                "⚠".yellow(),
-                count
-            );
+            println!("\n  {} {} files in quarantine", "⚠".yellow(), count);
         }
     }
 

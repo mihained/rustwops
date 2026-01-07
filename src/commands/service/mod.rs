@@ -54,24 +54,12 @@ pub enum ServiceCommand {
 
 pub async fn execute(command: ServiceCommand, _cli: &Cli) -> Result<()> {
     match command {
-        ServiceCommand::Start { service } => {
-            start_service(&service).await
-        }
-        ServiceCommand::Stop { service } => {
-            stop_service(&service).await
-        }
-        ServiceCommand::Restart { service } => {
-            restart_service(&service).await
-        }
-        ServiceCommand::Reload { service } => {
-            reload_service(&service).await
-        }
-        ServiceCommand::Status { service } => {
-            show_status(service.as_deref()).await
-        }
-        ServiceCommand::Log { service, tail, n } => {
-            show_logs(&service, tail, n).await
-        }
+        ServiceCommand::Start { service } => start_service(&service).await,
+        ServiceCommand::Stop { service } => stop_service(&service).await,
+        ServiceCommand::Restart { service } => restart_service(&service).await,
+        ServiceCommand::Reload { service } => reload_service(&service).await,
+        ServiceCommand::Status { service } => show_status(service.as_deref()).await,
+        ServiceCommand::Log { service, tail, n } => show_logs(&service, tail, n).await,
     }
 }
 

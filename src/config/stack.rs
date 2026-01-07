@@ -1,8 +1,8 @@
 // Stack optimization configurations based on WordOps best practices
 // https://github.com/WordOps/WordOps
 
-use anyhow::Result;
 use crate::utils::shell;
+use anyhow::Result;
 
 // =============================================================================
 // Nginx Optimization
@@ -159,7 +159,11 @@ pub async fn apply_nginx_config() -> Result<()> {
 
     // Backup original config
     if tokio::fs::metadata("/etc/nginx/nginx.conf").await.is_ok() {
-        let _ = shell::run_command("cp", &["/etc/nginx/nginx.conf", "/etc/nginx/nginx.conf.backup"]).await;
+        let _ = shell::run_command(
+            "cp",
+            &["/etc/nginx/nginx.conf", "/etc/nginx/nginx.conf.backup"],
+        )
+        .await;
     }
 
     // Write new config
@@ -169,9 +173,21 @@ pub async fn apply_nginx_config() -> Result<()> {
     shell::run_command("mkdir", &["-p", "/etc/nginx/snippets"]).await?;
 
     // Write security snippets
-    tokio::fs::write("/etc/nginx/snippets/security.conf", generate_nginx_security_snippet()).await?;
-    tokio::fs::write("/etc/nginx/snippets/static-files.conf", generate_nginx_static_snippet()).await?;
-    tokio::fs::write("/etc/nginx/snippets/fastcgi-cache.conf", generate_nginx_fastcgi_cache_snippet()).await?;
+    tokio::fs::write(
+        "/etc/nginx/snippets/security.conf",
+        generate_nginx_security_snippet(),
+    )
+    .await?;
+    tokio::fs::write(
+        "/etc/nginx/snippets/static-files.conf",
+        generate_nginx_static_snippet(),
+    )
+    .await?;
+    tokio::fs::write(
+        "/etc/nginx/snippets/fastcgi-cache.conf",
+        generate_nginx_fastcgi_cache_snippet(),
+    )
+    .await?;
 
     // Test config
     shell::run_command("nginx", &["-t"]).await?;
@@ -261,7 +277,8 @@ location ^~ /.well-known/acme-challenge/ {
     root /var/www/html;
     allow all;
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Generate nginx static files caching snippet
@@ -376,7 +393,8 @@ if ($request_uri ~* "/cart.*|/checkout.*|/my-account.*|/addons.*") {
 
 /// Generate optimized PHP-FPM global configuration
 pub fn generate_php_fpm_conf(php_version: &str) -> String {
-    format!(r#"; RustWops Optimized PHP-FPM Configuration
+    format!(
+        r#"; RustWops Optimized PHP-FPM Configuration
 ; Based on WordOps best practices
 
 [global]
@@ -390,7 +408,8 @@ emergency_restart_interval = 1m
 process_control_timeout = 10s
 
 include=/etc/php/{php_version}/fpm/pool.d/*.conf
-"#)
+"#
+    )
 }
 
 /// Generate optimized php.ini settings
@@ -433,7 +452,8 @@ opcache.fast_shutdown = 1
 session.gc_maxlifetime = 1440
 session.gc_probability = 1
 session.gc_divisor = 1000
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Apply PHP-FPM configuration
@@ -485,21 +505,29 @@ pub async fn generate_mariadb_conf() -> Result<String> {
     let ram_mb = get_system_ram_mb().await?;
 
     // Calculate InnoDB buffer pool (30% of RAM, min 128M, max 70% of RAM)
-    let buffer_pool = ((ram_mb as f64 * 0.3) as u64).max(128).min((ram_mb as f64 * 0.7) as u64);
+    let buffer_pool = ((ram_mb as f64 * 0.3) as u64)
+        .max(128)
+        .min((ram_mb as f64 * 0.7) as u64);
 
     // Calculate InnoDB instances (1 per GB, max 64)
-    let buffer_instances = (ram_mb / 1024).max(1).min(64);
+    let buffer_instances = (ram_mb / 1024).clamp(1, 64);
 
     // Calculate log file size (25% of buffer pool)
     let log_file_size = (buffer_pool as f64 * 0.25) as u64;
 
     // Calculate tmp_table_size based on RAM
-    let tmp_table_size = if ram_mb >= 65536 { 256 }
-                         else if ram_mb >= 8192 { 128 }
-                         else if ram_mb >= 2048 { 64 }
-                         else { 32 };
+    let tmp_table_size = if ram_mb >= 65536 {
+        256
+    } else if ram_mb >= 8192 {
+        128
+    } else if ram_mb >= 2048 {
+        64
+    } else {
+        32
+    };
 
-    Ok(format!(r#"# RustWops Optimized MariaDB Configuration
+    Ok(format!(
+        r#"# RustWops Optimized MariaDB Configuration
 # Based on WordOps best practices
 # System RAM: {} MB
 
@@ -595,8 +623,13 @@ no-auto-rehash
 
 [isamchk]
 key_buffer = 16M
-"#, ram_mb, tmp_table_size = tmp_table_size, buffer_pool = buffer_pool,
-   buffer_instances = buffer_instances, log_file_size = log_file_size))
+"#,
+        ram_mb,
+        tmp_table_size = tmp_table_size,
+        buffer_pool = buffer_pool,
+        buffer_instances = buffer_instances,
+        log_file_size = log_file_size
+    ))
 }
 
 /// Run MariaDB secure installation equivalent
@@ -605,7 +638,8 @@ pub async fn secure_mariadb_installation() -> Result<()> {
     let root_password = crate::utils::password::generate(32);
 
     // SQL commands equivalent to mysql_secure_installation
-    let secure_sql = format!(r#"
+    let secure_sql = format!(
+        r#"
         -- Set root password
         ALTER USER 'root'@'localhost' IDENTIFIED BY '{}';
 
@@ -623,7 +657,9 @@ pub async fn secure_mariadb_installation() -> Result<()> {
 
         -- Flush privileges
         FLUSH PRIVILEGES;
-    "#, root_password);
+    "#,
+        root_password
+    );
 
     shell::run_command("mysql", &["-e", &secure_sql]).await?;
 
@@ -669,9 +705,11 @@ pub async fn generate_redis_conf() -> Result<String> {
         (ram_mb as f64 * 0.1) as u64
     } else {
         (ram_mb as f64 * 0.2) as u64
-    }.max(64); // Minimum 64MB
+    }
+    .max(64); // Minimum 64MB
 
-    Ok(format!(r#"# RustWops Optimized Redis Configuration
+    Ok(format!(
+        r#"# RustWops Optimized Redis Configuration
 # Based on WordOps best practices
 # System RAM: {} MB
 
@@ -733,7 +771,9 @@ client-output-buffer-limit pubsub 32mb 8mb 60
 
 # Security
 protected-mode yes
-"#, ram_mb, maxmemory))
+"#,
+        ram_mb, maxmemory
+    ))
 }
 
 /// Apply Redis configuration
@@ -742,7 +782,11 @@ pub async fn apply_redis_config() -> Result<()> {
 
     // Backup original
     if tokio::fs::metadata("/etc/redis/redis.conf").await.is_ok() {
-        let _ = shell::run_command("cp", &["/etc/redis/redis.conf", "/etc/redis/redis.conf.backup"]).await;
+        let _ = shell::run_command(
+            "cp",
+            &["/etc/redis/redis.conf", "/etc/redis/redis.conf.backup"],
+        )
+        .await;
     }
 
     tokio::fs::write("/etc/redis/redis.conf", config).await?;
@@ -833,7 +877,8 @@ net.ipv4.ip_local_port_range = 1024 65535
 fs.file-max = 2097152
 fs.nr_open = 2097152
 fs.inotify.max_user_watches = 524288
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Generate file descriptor limits configuration
@@ -851,7 +896,8 @@ mysql           soft    nofile          500000
 mysql           hard    nofile          500000
 redis           soft    nofile          500000
 redis           hard    nofile          500000
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Apply system tuning
@@ -860,7 +906,11 @@ pub async fn apply_sysctl_tuning() -> Result<()> {
     tokio::fs::write("/etc/sysctl.d/99-rustwops.conf", generate_sysctl_conf()).await?;
 
     // Write limits config
-    tokio::fs::write("/etc/security/limits.d/99-rustwops.conf", generate_limits_conf()).await?;
+    tokio::fs::write(
+        "/etc/security/limits.d/99-rustwops.conf",
+        generate_limits_conf(),
+    )
+    .await?;
 
     // Apply sysctl settings
     shell::run_command("sysctl", &["-p", "/etc/sysctl.d/99-rustwops.conf"]).await?;

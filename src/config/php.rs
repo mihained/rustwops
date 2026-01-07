@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::utils::shell;
+use anyhow::Result;
 
 const POOL_DIR_TEMPLATE: &str = "/etc/php/{version}/fpm/pool.d";
 
@@ -9,7 +9,10 @@ pub async fn detect_latest_version() -> Result<String> {
 
     for version in versions {
         let service = format!("php{}-fpm", version);
-        if shell::run_command("systemctl", &["is-enabled", &service]).await.is_ok() {
+        if shell::run_command("systemctl", &["is-enabled", &service])
+            .await
+            .is_ok()
+        {
             return Ok(version.to_string());
         }
     }
@@ -24,7 +27,10 @@ pub async fn get_installed_versions() -> Vec<String> {
 
     for version in versions {
         let service = format!("php{}-fpm", version);
-        if shell::run_command("systemctl", &["is-enabled", &service]).await.is_ok() {
+        if shell::run_command("systemctl", &["is-enabled", &service])
+            .await
+            .is_ok()
+        {
             installed.push(version.to_string());
         }
     }
@@ -36,7 +42,11 @@ pub async fn create_pool(domain: &str, php_version: &str) -> Result<()> {
     create_pool_with_webroot(domain, php_version, None).await
 }
 
-pub async fn create_pool_with_webroot(domain: &str, php_version: &str, webroot: Option<&str>) -> Result<()> {
+pub async fn create_pool_with_webroot(
+    domain: &str,
+    php_version: &str,
+    webroot: Option<&str>,
+) -> Result<()> {
     let pool_dir = POOL_DIR_TEMPLATE.replace("{version}", php_version);
     let pool_path = format!("{}/{}.conf", pool_dir, domain);
 

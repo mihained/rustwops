@@ -20,11 +20,7 @@ struct SiteRow {
     status: String,
 }
 
-pub async fn execute(
-    filter_type: Option<SiteType>,
-    detailed: bool,
-    _cli: &Cli,
-) -> Result<()> {
+pub async fn execute(filter_type: Option<SiteType>, detailed: bool, _cli: &Cli) -> Result<()> {
     let all_sites = database::sites::list().await?;
 
     // Get staging domains to filter them out
@@ -48,7 +44,10 @@ pub async fn execute(
     // Filter by type if specified
     let sites: Vec<_> = if let Some(site_type) = filter_type {
         let type_str = site_type.to_string();
-        sites.into_iter().filter(|s| s.site_type == type_str).collect()
+        sites
+            .into_iter()
+            .filter(|s| s.site_type == type_str)
+            .collect()
     } else {
         sites
     };

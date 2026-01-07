@@ -12,7 +12,9 @@ fn setup_logging(verbose: bool) {
     };
 
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| filter.into()))
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| filter.into()),
+        )
         .with(tracing_subscriber::fmt::layer().without_time())
         .init();
 }

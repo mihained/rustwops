@@ -80,10 +80,7 @@ pub async fn execute(
     // Initialize RustWops directories and database
     initialize_rustwops(cli.verbose).await?;
 
-    println!(
-        "\n{} Stack installation complete!\n",
-        "✓".green().bold()
-    );
+    println!("\n{} Stack installation complete!\n", "✓".green().bold());
 
     Ok(())
 }
@@ -98,9 +95,7 @@ async fn detect_ubuntu_version() -> Result<String> {
     if let Ok(content) = shell::read_file("/etc/os-release").await {
         for line in content.lines() {
             if line.starts_with("VERSION_ID=") {
-                let version = line
-                    .trim_start_matches("VERSION_ID=")
-                    .trim_matches('"');
+                let version = line.trim_start_matches("VERSION_ID=").trim_matches('"');
                 return Ok(version.to_string());
             }
         }
@@ -127,12 +122,8 @@ async fn install_nginx(custom: bool, verbose: bool) -> Result<()> {
         pb.set_message("Installing custom Nginx (HTTP/3, Brotli)...");
         anyhow::bail!("Custom Nginx build not yet implemented");
     } else {
-        shell::run_command_with_output(
-            "apt-get",
-            &["install", "-y", "-qq", "nginx"],
-            verbose,
-        )
-        .await?;
+        shell::run_command_with_output("apt-get", &["install", "-y", "-qq", "nginx"], verbose)
+            .await?;
     }
 
     // Apply optimized nginx configuration
@@ -158,12 +149,8 @@ async fn install_php(version: &str, verbose: bool) -> Result<()> {
     )
     .await?;
 
-    shell::run_command_with_output(
-        "add-apt-repository",
-        &["-y", "ppa:ondrej/php"],
-        verbose,
-    )
-    .await?;
+    shell::run_command_with_output("add-apt-repository", &["-y", "ppa:ondrej/php"], verbose)
+        .await?;
 
     shell::run_command_with_output("apt-get", &["update", "-qq"], verbose).await?;
 
@@ -202,7 +189,11 @@ async fn install_php(version: &str, verbose: bool) -> Result<()> {
     shell::run_command("systemctl", &["enable", &service]).await?;
     shell::run_command("systemctl", &["restart", &service]).await?;
 
-    pb.finish_with_message(format!("{} PHP {} installed and optimized", "✓".green(), version));
+    pb.finish_with_message(format!(
+        "{} PHP {} installed and optimized",
+        "✓".green(),
+        version
+    ));
     Ok(())
 }
 
@@ -328,17 +319,15 @@ async fn install_nodejs(version: &str, verbose: bool) -> Result<()> {
     shell::run_shell_script(&node_install, verbose).await?;
 
     // Install PM2 globally
-    let pm2_install = format!(
-        r#"
+    let pm2_install = r#"
         export HOME=/root
         export NVM_DIR="$HOME/.nvm"
         [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
         npm install -g pm2
         pm2 startup systemd -u root --hp /root
-    "#
-    );
+    "#;
 
-    shell::run_shell_script(&pm2_install, verbose).await?;
+    shell::run_shell_script(pm2_install, verbose).await?;
 
     pb.finish_with_message(format!(
         "{} Node.js {} with PM2 installed",
@@ -353,12 +342,7 @@ async fn install_auxiliary_tools(verbose: bool) -> Result<()> {
 
     // Install cron (required for acme.sh auto-renewal)
     pb.set_message("Installing cron...");
-    shell::run_command_with_output(
-        "apt-get",
-        &["install", "-y", "-qq", "cron"],
-        verbose,
-    )
-    .await?;
+    shell::run_command_with_output("apt-get", &["install", "-y", "-qq", "cron"], verbose).await?;
 
     // Install acme.sh (use a placeholder email that can be changed later)
     pb.set_message("Installing acme.sh...");
@@ -414,7 +398,11 @@ async fn initialize_rustwops(_verbose: bool) -> Result<()> {
     pb.set_message("Applying system tuning...");
     if let Err(e) = crate::config::stack::apply_sysctl_tuning().await {
         // Non-fatal - log warning but continue
-        eprintln!("  {} Warning: Could not apply sysctl tuning: {}", "⚠".yellow(), e);
+        eprintln!(
+            "  {} Warning: Could not apply sysctl tuning: {}",
+            "⚠".yellow(),
+            e
+        );
     }
 
     // Initialize SQLite database
@@ -436,7 +424,12 @@ pub async fn list_php_versions(_cli: &Cli) -> Result<()> {
             .is_ok();
 
         if installed {
-            println!("  {} PHP {} {}", "●".green(), version, "(installed)".dimmed());
+            println!(
+                "  {} PHP {} {}",
+                "●".green(),
+                version,
+                "(installed)".dimmed()
+            );
         } else {
             println!("  {} PHP {}", "○".dimmed(), version);
         }

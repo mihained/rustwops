@@ -3,20 +3,13 @@ use tokio::process::Command;
 
 /// Run a command and return its stdout
 pub async fn run_command(program: &str, args: &[&str]) -> Result<String> {
-    let output = Command::new(program)
-        .args(args)
-        .output()
-        .await?;
+    let output = Command::new(program).args(args).output().await?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!(
-            "Command '{}' failed: {}",
-            program,
-            stderr
-        )
+        anyhow::bail!("Command '{}' failed: {}", program, stderr)
     }
 }
 
@@ -27,15 +20,16 @@ pub async fn run_command_with_output(
     show_output: bool,
 ) -> Result<String> {
     if show_output {
-        let status = Command::new(program)
-            .args(args)
-            .status()
-            .await?;
+        let status = Command::new(program).args(args).status().await?;
 
         if status.success() {
             Ok(String::new())
         } else {
-            anyhow::bail!("Command '{}' failed with exit code {:?}", program, status.code())
+            anyhow::bail!(
+                "Command '{}' failed with exit code {:?}",
+                program,
+                status.code()
+            )
         }
     } else {
         run_command(program, args).await
@@ -45,11 +39,7 @@ pub async fn run_command_with_output(
 /// Run a shell script
 pub async fn run_shell_script(script: &str, show_output: bool) -> Result<String> {
     if show_output {
-        let status = Command::new("bash")
-            .arg("-c")
-            .arg(script)
-            .status()
-            .await?;
+        let status = Command::new("bash").arg("-c").arg(script).status().await?;
 
         if status.success() {
             Ok(String::new())
@@ -57,11 +47,7 @@ pub async fn run_shell_script(script: &str, show_output: bool) -> Result<String>
             anyhow::bail!("Script failed with exit code {:?}", status.code())
         }
     } else {
-        let output = Command::new("bash")
-            .arg("-c")
-            .arg(script)
-            .output()
-            .await?;
+        let output = Command::new("bash").arg("-c").arg(script).output().await?;
 
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).to_string())

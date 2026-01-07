@@ -9,13 +9,24 @@ pub async fn execute(domain: &str, _cli: &Cli) -> Result<()> {
     // Get site from database
     let site = database::sites::get(domain).await?;
 
-    println!("\n{} Site Information: {}\n", "→".bright_cyan().bold(), domain.bright_white());
+    println!(
+        "\n{} Site Information: {}\n",
+        "→".bright_cyan().bold(),
+        domain.bright_white()
+    );
 
     // Basic info
     println!("  {} General:", "●".bright_cyan());
     println!("    Domain:   {}", site.domain);
     println!("    Type:     {}", site.site_type);
-    println!("    Status:   {}", if site.enabled { "enabled".green() } else { "disabled".yellow() });
+    println!(
+        "    Status:   {}",
+        if site.enabled {
+            "enabled".green()
+        } else {
+            "disabled".yellow()
+        }
+    );
     println!("    Webroot:  {}", site.webroot);
     println!("    Created:  {}", site.created_at);
 
@@ -23,8 +34,14 @@ pub async fn execute(domain: &str, _cli: &Cli) -> Result<()> {
     if let Some(ref php_version) = site.php_version {
         println!("\n  {} PHP:", "●".bright_cyan());
         println!("    Version:  {}", php_version);
-        println!("    Pool:     /etc/php/{}/fpm/pool.d/{}.conf", php_version, domain);
-        println!("    Socket:   /run/php/php{}-fpm-{}.sock", php_version, domain);
+        println!(
+            "    Pool:     /etc/php/{}/fpm/pool.d/{}.conf",
+            php_version, domain
+        );
+        println!(
+            "    Socket:   /run/php/php{}-fpm-{}.sock",
+            php_version, domain
+        );
     }
 
     // Cache info
@@ -39,7 +56,10 @@ pub async fn execute(domain: &str, _cli: &Cli) -> Result<()> {
         if let Ok(cert_info) = get_ssl_info(domain).await {
             println!("    Certificate: {}", cert_info.cert_path);
             println!("    Expires:     {}", cert_info.expires);
-            println!("    Wildcard:    {}", if cert_info.is_wildcard { "yes" } else { "no" });
+            println!(
+                "    Wildcard:    {}",
+                if cert_info.is_wildcard { "yes" } else { "no" }
+            );
         }
     }
 
@@ -117,7 +137,11 @@ async fn get_ssl_info(domain: &str) -> Result<SslInfo> {
 async fn get_disk_usage(domain: &str) -> Result<String> {
     let webroot = format!("/var/www/{}", domain);
     let output = shell::run_command("du", &["-sh", &webroot]).await?;
-    Ok(output.split_whitespace().next().unwrap_or("unknown").to_string())
+    Ok(output
+        .split_whitespace()
+        .next()
+        .unwrap_or("unknown")
+        .to_string())
 }
 
 struct WordPressInfo {
@@ -132,7 +156,12 @@ async fn get_wordpress_info(domain: &str) -> Result<WordPressInfo> {
     // Get WP version
     let version = shell::run_command(
         "wp",
-        &["core", "version", &format!("--path={}", webroot), "--allow-root"],
+        &[
+            "core",
+            "version",
+            &format!("--path={}", webroot),
+            "--allow-root",
+        ],
     )
     .await
     .map(|o| o.trim().to_string())
@@ -141,7 +170,13 @@ async fn get_wordpress_info(domain: &str) -> Result<WordPressInfo> {
     // Count plugins
     let plugins = shell::run_command(
         "wp",
-        &["plugin", "list", "--format=count", &format!("--path={}", webroot), "--allow-root"],
+        &[
+            "plugin",
+            "list",
+            "--format=count",
+            &format!("--path={}", webroot),
+            "--allow-root",
+        ],
     )
     .await
     .map(|o| o.trim().parse().unwrap_or(0))
@@ -150,7 +185,13 @@ async fn get_wordpress_info(domain: &str) -> Result<WordPressInfo> {
     // Count themes
     let themes = shell::run_command(
         "wp",
-        &["theme", "list", "--format=count", &format!("--path={}", webroot), "--allow-root"],
+        &[
+            "theme",
+            "list",
+            "--format=count",
+            &format!("--path={}", webroot),
+            "--allow-root",
+        ],
     )
     .await
     .map(|o| o.trim().parse().unwrap_or(0))

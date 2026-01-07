@@ -231,7 +231,16 @@ pub async fn execute(command: SiteCommand, cli: &Cli) -> anyhow::Result<()> {
                 }
             };
             create::execute(
-                &domain, r#type, &php_version, mysql, cache, ssl, wildcard, dns, upstream, cli,
+                &domain,
+                r#type,
+                &php_version,
+                mysql,
+                cache,
+                ssl,
+                wildcard,
+                dns,
+                upstream,
+                cli,
             )
             .await
         }

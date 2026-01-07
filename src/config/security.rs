@@ -1,8 +1,8 @@
 // Security tools configuration for RustWops
 // Fail2Ban, MySQLTuner, ClamAV
 
-use anyhow::Result;
 use crate::utils::shell;
+use anyhow::Result;
 
 // =============================================================================
 // Fail2Ban Configuration
@@ -70,7 +70,8 @@ filter = wordpress
 logpath = /var/log/nginx/*access*.log
 maxretry = 5
 bantime = 3600
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Generate WordPress Fail2Ban filter
@@ -89,7 +90,8 @@ ignoreregex =
 # Notes:
 # - This filter catches POST requests to WordPress login and XMLRPC endpoints
 # - It works for WordPress installed in root or subdirectories
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Generate nginx-forbidden filter
@@ -105,7 +107,8 @@ ignoreregex =
 # Notes:
 # - Catches clients repeatedly triggering 403 errors
 # - Usually indicates scanning or attack attempts
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Install and configure Fail2Ban
@@ -115,11 +118,8 @@ pub async fn install_fail2ban(verbose: bool) -> Result<()> {
     // Install Fail2Ban
     print!("  Installing Fail2Ban...");
     io::stdout().flush().ok();
-    shell::run_command_with_output(
-        "apt-get",
-        &["install", "-y", "-qq", "fail2ban"],
-        verbose,
-    ).await?;
+    shell::run_command_with_output("apt-get", &["install", "-y", "-qq", "fail2ban"], verbose)
+        .await?;
     println!(" done");
 
     // Create jail.local configuration
@@ -131,13 +131,21 @@ pub async fn install_fail2ban(verbose: bool) -> Result<()> {
     // Create WordPress filter
     print!("  Creating WordPress filter...");
     io::stdout().flush().ok();
-    tokio::fs::write("/etc/fail2ban/filter.d/wordpress.conf", generate_wordpress_filter()).await?;
+    tokio::fs::write(
+        "/etc/fail2ban/filter.d/wordpress.conf",
+        generate_wordpress_filter(),
+    )
+    .await?;
     println!(" done");
 
     // Create nginx-forbidden filter
     print!("  Creating nginx-forbidden filter...");
     io::stdout().flush().ok();
-    tokio::fs::write("/etc/fail2ban/filter.d/nginx-forbidden.conf", generate_nginx_forbidden_filter()).await?;
+    tokio::fs::write(
+        "/etc/fail2ban/filter.d/nginx-forbidden.conf",
+        generate_nginx_forbidden_filter(),
+    )
+    .await?;
     println!(" done");
 
     // Enable and start Fail2Ban
@@ -163,10 +171,12 @@ pub async fn install_mysqltuner(verbose: bool) -> Result<()> {
         &[
             "-sL",
             "https://raw.githubusercontent.com/major/MySQLTuner-perl/master/mysqltuner.pl",
-            "-o", "/usr/local/bin/mysqltuner",
+            "-o",
+            "/usr/local/bin/mysqltuner",
         ],
         verbose,
-    ).await?;
+    )
+    .await?;
     println!(" done");
 
     // Make executable
@@ -177,9 +187,17 @@ pub async fn install_mysqltuner(verbose: bool) -> Result<()> {
     io::stdout().flush().ok();
     shell::run_command_with_output(
         "apt-get",
-        &["install", "-y", "-qq", "perl", "libdbi-perl", "libdbd-mysql-perl"],
+        &[
+            "install",
+            "-y",
+            "-qq",
+            "perl",
+            "libdbi-perl",
+            "libdbd-mysql-perl",
+        ],
         verbose,
-    ).await?;
+    )
+    .await?;
     println!(" done");
 
     Ok(())
@@ -206,7 +224,8 @@ systemctl start clamav-freshclam 2>/dev/null || true
 
 # Log the update
 echo "$(date): ClamAV definitions updated" >> /var/log/rustwops/clamav-update.log
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Generate ClamAV scan script
@@ -234,7 +253,8 @@ clamscan --infected --recursive --move="$QUARANTINE_DIR" "$SCAN_DIR" >> "$LOG_FI
 # Log completion
 echo "$(date): ClamAV scan completed" >> "$LOG_FILE"
 echo "---" >> "$LOG_FILE"
-"#.to_string()
+"#
+    .to_string()
 }
 
 /// Install and configure ClamAV
@@ -246,9 +266,17 @@ pub async fn install_clamav(verbose: bool) -> Result<()> {
     io::stdout().flush().ok();
     shell::run_command_with_output(
         "apt-get",
-        &["install", "-y", "-qq", "clamav", "clamav-daemon", "clamav-freshclam"],
+        &[
+            "install",
+            "-y",
+            "-qq",
+            "clamav",
+            "clamav-daemon",
+            "clamav-freshclam",
+        ],
         verbose,
-    ).await?;
+    )
+    .await?;
     println!(" done");
 
     // Stop freshclam service before updating

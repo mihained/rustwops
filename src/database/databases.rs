@@ -12,12 +12,7 @@ pub struct Database {
     pub created_at: String,
 }
 
-pub async fn create(
-    domain: &str,
-    db_name: &str,
-    db_user: &str,
-    db_password: &str,
-) -> Result<i64> {
+pub async fn create(domain: &str, db_name: &str, db_user: &str, db_password: &str) -> Result<i64> {
     let conn = super::get_connection()?;
     let conn = conn.lock().await;
 

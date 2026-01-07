@@ -226,7 +226,7 @@ server {{
     }}
 }}
 "#,
-        domain_underscore = domain.replace('.', "_").replace('-', "_")
+        domain_underscore = domain.replace(['.', '-'], "_")
     )
 }
 
@@ -269,7 +269,7 @@ server {{
     }}
 }}
 "#,
-        domain_underscore = domain.replace('.', "_").replace('-', "_")
+        domain_underscore = domain.replace(['.', '-'], "_")
     )
 }
 
