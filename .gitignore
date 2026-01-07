@@ -1,0 +1,37 @@
+# Build artifacts
+/target/
+debug/
+release/
+
+# Cargo lock for libraries (keep for binaries)
+# Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+
+# Test artifacts
+*.profraw
+
+# Temporary files
+tmp/
+temp/
+
+# Development notes
+CLAUDE.md
+RUSTWOPS_PLAN.md
+TODO.md
