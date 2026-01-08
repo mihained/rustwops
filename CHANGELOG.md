@@ -5,6 +5,12 @@ All notable changes to RustWops will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-01-08
+
+### Fixed
+- Create nginx FastCGI cache directory before config test (fixes stack install failure)
+- Add symlinks for node, npm, pm2 to /usr/local/bin (fixes PM2 commands not found)
+
 ## [0.6.0] - 2026-01-08
 
 ### Added
