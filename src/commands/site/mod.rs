@@ -5,8 +5,10 @@ use crate::Cli;
 pub mod cache;
 pub mod create;
 pub mod delete;
+pub mod enable;
 pub mod info;
 pub mod list;
+pub mod update;
 
 #[derive(Clone, Subcommand)]
 pub enum SiteCommand {
@@ -269,20 +271,16 @@ pub async fn execute(command: SiteCommand, cli: &Cli) -> anyhow::Result<()> {
             files,
             db,
         } => delete::execute(&domain, all, files, db, cli).await,
-        SiteCommand::Update { .. } => {
-            anyhow::bail!("Site update not yet implemented. Coming soon!")
+        SiteCommand::Update { domain, php, cache } => {
+            update::execute(&domain, php, cache, cli).await
         }
         SiteCommand::List { r#type, detailed } => list::execute(r#type, detailed, cli).await,
         SiteCommand::Info { domain } => info::execute(&domain, cli).await,
         SiteCommand::Log { .. } => {
             anyhow::bail!("Site log not yet implemented. Coming soon!")
         }
-        SiteCommand::Enable { .. } => {
-            anyhow::bail!("Site enable not yet implemented. Coming soon!")
-        }
-        SiteCommand::Disable { .. } => {
-            anyhow::bail!("Site disable not yet implemented. Coming soon!")
-        }
+        SiteCommand::Enable { domain } => enable::enable(&domain, cli).await,
+        SiteCommand::Disable { domain } => enable::disable(&domain, cli).await,
         SiteCommand::Wp { .. } => {
             anyhow::bail!("WP-CLI wrapper not yet implemented. Coming soon!")
         }
