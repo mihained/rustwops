@@ -128,14 +128,18 @@ pub async fn execute(command: BackupCommand, cli: &Cli) -> Result<()> {
             require_root("delete backup")?;
             delete_backup(backup_id, older_than, cli).await
         }
-        BackupCommand::Config { .. } => {
+        BackupCommand::Config {
+            dir,
+            retention,
+            s3_bucket,
+            s3_region,
+            schedule,
+        } => {
             require_root("configure backup")?;
-            anyhow::bail!("Backup config not yet implemented. Coming soon!")
+            configure_backup(dir, retention, s3_bucket, s3_region, schedule).await
         }
         // Read-only command - no root required
-        BackupCommand::ConfigShow => {
-            anyhow::bail!("Backup config-show not yet implemented. Coming soon!")
-        }
+        BackupCommand::ConfigShow => show_backup_config().await,
     }
 }
 
@@ -610,4 +614,215 @@ fn format_size(bytes: u64) -> String {
     } else {
         format!("{} B", bytes)
     }
+}
+
+async fn configure_backup(
+    dir: Option<String>,
+    retention: Option<u32>,
+    s3_bucket: Option<String>,
+    s3_region: Option<String>,
+    schedule: Option<String>,
+) -> Result<()> {
+    use crate::config;
+
+    // Check if any option was provided
+    if dir.is_none()
+        && retention.is_none()
+        && s3_bucket.is_none()
+        && s3_region.is_none()
+        && schedule.is_none()
+    {
+        println!("{} No configuration options provided.\n", "!".yellow());
+        println!("Available options:");
+        println!("  --dir <PATH>       Backup storage directory");
+        println!("  --retention <DAYS> Days to keep backups");
+        println!("  --s3-bucket <NAME> S3 bucket name for remote storage");
+        println!("  --s3-region <REGION> S3 region");
+        println!("  --schedule <CRON>  Backup schedule (cron format)");
+        println!("\nExample:");
+        println!("  rw backup config --retention 14 --dir /mnt/backups");
+        return Ok(());
+    }
+
+    println!(
+        "{} Configuring backup settings...\n",
+        "→".bright_cyan().bold()
+    );
+
+    // Load current config
+    let mut cfg = config::load_or_create().await?;
+    let mut changes = Vec::new();
+
+    // Update directory
+    if let Some(new_dir) = dir {
+        // Validate directory exists or can be created
+        if !Path::new(&new_dir).exists() {
+            tokio::fs::create_dir_all(&new_dir).await?;
+            println!("  {} Created directory: {}", "✓".green(), new_dir);
+        }
+        cfg.backup.directory = new_dir.clone();
+        changes.push(format!("Backup directory: {}", new_dir));
+    }
+
+    // Update retention
+    if let Some(days) = retention {
+        if days == 0 {
+            return Err(anyhow!("Retention days must be greater than 0"));
+        }
+        cfg.backup.retention_days = days;
+        changes.push(format!("Retention: {} days", days));
+    }
+
+    // Update S3 bucket
+    if let Some(bucket) = s3_bucket {
+        cfg.backup.s3.bucket = bucket.clone();
+        changes.push(format!("S3 bucket: {}", bucket));
+    }
+
+    // Update S3 region
+    if let Some(region) = s3_region {
+        cfg.backup.s3.region = region.clone();
+        changes.push(format!("S3 region: {}", region));
+    }
+
+    // Update schedule (cron format)
+    if let Some(cron) = schedule {
+        // Validate cron format (basic check)
+        let parts: Vec<&str> = cron.split_whitespace().collect();
+        if parts.len() != 5 {
+            return Err(anyhow!(
+                "Invalid cron format. Expected 5 fields: minute hour day month weekday\n\
+                 Example: '0 3 * * *' (daily at 3 AM)"
+            ));
+        }
+
+        // Create/update cron job
+        setup_backup_cron(&cron).await?;
+        changes.push(format!("Schedule: {}", cron));
+    }
+
+    // Save config
+    cfg.save().await?;
+
+    // Show changes
+    println!("{} Configuration updated:\n", "✓".green().bold());
+    for change in changes {
+        println!("  {} {}", "→".cyan(), change);
+    }
+
+    println!(
+        "\n{} View current config: rw backup config-show",
+        "→".dimmed()
+    );
+
+    Ok(())
+}
+
+async fn setup_backup_cron(schedule: &str) -> Result<()> {
+    let cron_file = "/etc/cron.d/rustwops-backup";
+
+    // Create cron job content
+    let cron_content = format!(
+        "# RustWops automated backup schedule\n\
+         # Edit with: rw backup config --schedule \"<cron>\"\n\
+         SHELL=/bin/bash\n\
+         PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n\
+         \n\
+         {} root /usr/local/bin/rw backup create >> /var/log/rustwops/backup.log 2>&1\n",
+        schedule
+    );
+
+    tokio::fs::write(cron_file, &cron_content).await?;
+    shell::run_command("chmod", &["644", cron_file]).await?;
+
+    println!("  {} Cron job configured: {}", "✓".green(), cron_file);
+
+    Ok(())
+}
+
+async fn show_backup_config() -> Result<()> {
+    use crate::config;
+
+    println!("{} Backup Configuration\n", "→".bright_cyan().bold());
+
+    let cfg = config::load_or_create().await?;
+
+    println!("  {} Storage", "━━━".bright_cyan());
+    println!("    Directory:   {}", cfg.backup.directory.bright_white());
+    println!("    Retention:   {} days", cfg.backup.retention_days);
+    println!("    Compression: level {}", cfg.backup.compression_level);
+
+    // S3 settings
+    println!("\n  {} Remote Storage (S3)", "━━━".bright_cyan());
+    if cfg.backup.s3.bucket.is_empty() {
+        println!("    Status: {}", "Not configured".dimmed());
+    } else {
+        println!("    Bucket: {}", cfg.backup.s3.bucket.bright_white());
+        println!(
+            "    Region: {}",
+            if cfg.backup.s3.region.is_empty() {
+                "not set".dimmed().to_string()
+            } else {
+                cfg.backup.s3.region.clone()
+            }
+        );
+        if !cfg.backup.s3.endpoint.is_empty() {
+            println!("    Endpoint: {}", cfg.backup.s3.endpoint);
+        }
+    }
+
+    // Schedule
+    println!("\n  {} Schedule", "━━━".bright_cyan());
+    let cron_file = Path::new("/etc/cron.d/rustwops-backup");
+    if cron_file.exists() {
+        let content = tokio::fs::read_to_string(cron_file).await?;
+        // Extract schedule from cron file
+        for line in content.lines() {
+            if line.starts_with('#')
+                || line.is_empty()
+                || line.starts_with("SHELL")
+                || line.starts_with("PATH")
+            {
+                continue;
+            }
+            // Parse cron line: min hour day month weekday user command
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 5 {
+                let schedule = parts[..5].join(" ");
+                println!("    Cron: {}", schedule.bright_white());
+                println!("    Status: {}", "Active".green());
+                break;
+            }
+        }
+    } else {
+        println!("    Status: {}", "Not scheduled".dimmed());
+        println!(
+            "    {}",
+            "Set with: rw backup config --schedule \"0 3 * * *\"".dimmed()
+        );
+    }
+
+    // Stats
+    println!("\n  {} Statistics", "━━━".bright_cyan());
+    let backups = database::backups::list(None).await?;
+    let total_size: i64 = backups.iter().filter_map(|b| b.file_size).sum();
+    println!("    Total backups: {}", backups.len());
+    println!("    Total size:    {}", format_size(total_size as u64));
+
+    // Check disk space
+    if Path::new(&cfg.backup.directory).exists() {
+        if let Ok(output) = shell::run_command("df", &["-h", &cfg.backup.directory]).await {
+            // Parse df output to get available space
+            let lines: Vec<&str> = output.lines().collect();
+            if lines.len() >= 2 {
+                let parts: Vec<&str> = lines[1].split_whitespace().collect();
+                if parts.len() >= 4 {
+                    println!("    Disk available: {}", parts[3]);
+                }
+            }
+        }
+    }
+
+    println!();
+    Ok(())
 }

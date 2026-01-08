@@ -752,6 +752,11 @@ async fn site_actions_menu(site: &crate::database::sites::Site) -> Result<()> {
             items.push("WP-CLI commands".to_string());
         }
 
+        // Node.js-specific actions
+        if site.site_type == "node" {
+            items.push("PM2 management".to_string());
+        }
+
         items.push("Delete site".to_string());
         items.push("Back".to_string());
 
@@ -831,6 +836,15 @@ async fn site_actions_menu(site: &crate::database::sites::Site) -> Result<()> {
             if selection == idx {
                 // WP-CLI
                 wp_cli_shell(&site.domain).await?;
+                continue;
+            }
+            idx += 1;
+        }
+
+        // Node.js PM2 management
+        if site.site_type == "node" {
+            if selection == idx {
+                pm2_menu(&site.domain).await?;
                 continue;
             }
             idx += 1;
@@ -1248,6 +1262,57 @@ async fn cache_purge_menu(domain: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn pm2_menu(domain: &str) -> Result<()> {
+    loop {
+        let items = vec![
+            "Show status",
+            "Start app",
+            "Stop app",
+            "Restart app",
+            "View logs",
+            "← Back",
+        ];
+
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt(format!("PM2 for {}", domain))
+            .items(&items)
+            .default(0)
+            .interact()?;
+
+        match selection {
+            0 => {
+                // Status requires root
+                run_privileged_command(&["site", "pm2", domain, "status"]).await?;
+                press_enter_to_continue()?;
+            }
+            1 => {
+                // Start requires root
+                run_privileged_command(&["site", "pm2", domain, "start"]).await?;
+                press_enter_to_continue()?;
+            }
+            2 => {
+                // Stop requires root
+                run_privileged_command(&["site", "pm2", domain, "stop"]).await?;
+                press_enter_to_continue()?;
+            }
+            3 => {
+                // Restart requires root
+                run_privileged_command(&["site", "pm2", domain, "restart"]).await?;
+                press_enter_to_continue()?;
+            }
+            4 => {
+                // Logs requires root (runs interactively)
+                println!(
+                    "\n{} Press Ctrl+C to stop viewing logs\n",
+                    "→".bright_cyan()
+                );
+                run_privileged_command(&["site", "pm2", domain, "logs"]).await?;
+            }
+            _ => return Ok(()),
+        }
+    }
 }
 
 async fn site_delete_confirm(domain: &str) -> Result<()> {
@@ -1837,6 +1902,8 @@ async fn backup_menu() -> Result<()> {
             "Restore from backup",
             "List backups",
             "Delete backup",
+            "Configure backups",
+            "Show configuration",
             "← Back",
         ];
 
@@ -1851,6 +1918,8 @@ async fn backup_menu() -> Result<()> {
             1 => restore_backup_interactive().await?,
             2 => list_backups_interactive().await?,
             3 => delete_backup_interactive().await?,
+            4 => configure_backup_interactive().await?,
+            5 => show_backup_config_interactive().await?,
             _ => return Ok(()),
         }
     }
@@ -2127,6 +2196,93 @@ async fn delete_backup_interactive() -> Result<()> {
         let days_arg = format!("--older-than={}", days);
         run_privileged_command(&["backup", "delete", &days_arg, "-y"]).await?;
     }
+
+    press_enter_to_continue()?;
+    Ok(())
+}
+
+async fn configure_backup_interactive() -> Result<()> {
+    println!("\n{} Backup Configuration\n", "→".bright_cyan().bold());
+
+    // Backup directory
+    let dir: String = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Backup directory (leave empty to keep current)")
+        .allow_empty(true)
+        .default("/var/backups/rustwops".to_string())
+        .interact_text()?;
+
+    // Retention days
+    let retention: String = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Retention days (leave empty to keep current)")
+        .allow_empty(true)
+        .default("30".to_string())
+        .interact_text()?;
+
+    // Schedule
+    let schedule_options = vec![
+        "No change",
+        "Daily at midnight (0 0 * * *)",
+        "Daily at 3am (0 3 * * *)",
+        "Weekly on Sunday at midnight (0 0 * * 0)",
+        "Custom cron expression",
+    ];
+
+    let schedule_idx = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Backup schedule")
+        .items(&schedule_options)
+        .default(0)
+        .interact()?;
+
+    let schedule = match schedule_idx {
+        1 => Some("0 0 * * *".to_string()),
+        2 => Some("0 3 * * *".to_string()),
+        3 => Some("0 0 * * 0".to_string()),
+        4 => {
+            let cron: String = Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("Enter cron expression (e.g., '0 2 * * *')")
+                .interact_text()?;
+            Some(cron)
+        }
+        _ => None,
+    };
+
+    // Build CLI arguments for privileged command
+    let mut args = vec!["backup", "config"];
+
+    let dir_arg;
+    if !dir.is_empty() {
+        dir_arg = format!("--dir={}", dir);
+        args.push(&dir_arg);
+    }
+
+    let retention_arg;
+    if !retention.is_empty() {
+        if let Ok(days) = retention.parse::<u32>() {
+            retention_arg = format!("--retention={}", days);
+            args.push(&retention_arg);
+        }
+    }
+
+    let schedule_arg;
+    if let Some(ref s) = schedule {
+        schedule_arg = format!("--schedule={}", s);
+        args.push(&schedule_arg);
+    }
+
+    if args.len() > 2 {
+        run_privileged_command(&args).await?;
+    } else {
+        println!("{} No changes made", "→".yellow());
+    }
+
+    press_enter_to_continue()?;
+    Ok(())
+}
+
+async fn show_backup_config_interactive() -> Result<()> {
+    // Show backup config (read-only, no sudo needed)
+    let cli = create_cli(false, false);
+    commands::backup::execute(commands::backup::BackupCommand::ConfigShow, &cli).await?;
 
     press_enter_to_continue()?;
     Ok(())
