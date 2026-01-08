@@ -8,6 +8,7 @@ pub mod delete;
 pub mod enable;
 pub mod info;
 pub mod list;
+pub mod pm2;
 pub mod update;
 
 #[derive(Clone, Subcommand)]
@@ -298,8 +299,9 @@ pub async fn execute(command: SiteCommand, cli: &Cli) -> anyhow::Result<()> {
         SiteCommand::Wp { .. } => {
             anyhow::bail!("WP-CLI wrapper not yet implemented. Coming soon!")
         }
-        SiteCommand::Pm2 { .. } => {
-            anyhow::bail!("PM2 wrapper not yet implemented. Coming soon!")
+        SiteCommand::Pm2 { domain, action } => {
+            require_root("manage PM2")?;
+            pm2::execute(&domain, action, cli).await
         }
         SiteCommand::CachePurge {
             domain,
