@@ -37,15 +37,20 @@ fn generate_wordpress_config(
     cache: Option<CacheType>,
     webroot: &str,
 ) -> String {
-    let cache_config = match cache {
-        Some(CacheType::Fastcgi) => fastcgi_cache_config(),
-        Some(CacheType::Redis) => "".to_string(), // Redis cache is handled in WordPress
-        _ => "".to_string(),
+    let (cache_config, php_cache_directives, log_format) = match cache {
+        Some(CacheType::Fastcgi) => (
+            fastcgi_cache_config(),
+            fastcgi_php_cache_directives(),
+            "cached", // Use log format with cache status
+        ),
+        Some(CacheType::Redis) => ("".to_string(), "".to_string(), "main"),
+        _ => ("".to_string(), "".to_string(), "main"),
     };
 
     format!(
         r#"# RustWops managed - {domain}
 # Type: WordPress
+# Cache: {cache_type}
 
 server {{
     listen 80;
@@ -55,7 +60,7 @@ server {{
     root {webroot};
     index index.php index.html;
 
-    access_log /var/log/nginx/{domain}.access.log;
+    access_log /var/log/nginx/{domain}.access.log {log_format};
     error_log /var/log/nginx/{domain}.error.log;
 
     # Security headers
@@ -77,6 +82,7 @@ server {{
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         fastcgi_param PATH_INFO $fastcgi_path_info;
+{php_cache_directives}
     }}
 
     # WordPress security
@@ -99,7 +105,12 @@ server {{
     gzip_comp_level 6;
     gzip_types text/plain text/css text/xml application/json application/javascript application/rss+xml application/atom+xml image/svg+xml;
 }}
-"#
+"#,
+        cache_type = match cache {
+            Some(CacheType::Fastcgi) => "FastCGI",
+            Some(CacheType::Redis) => "Redis",
+            _ => "None",
+        }
     )
 }
 
@@ -275,19 +286,48 @@ server {{
 
 fn fastcgi_cache_config() -> String {
     r#"
-    # FastCGI Cache
+    # FastCGI Cache - Skip conditions
     set $skip_cache 0;
 
+    # POST requests - don't cache
     if ($request_method = POST) { set $skip_cache 1; }
+
+    # URLs with query strings - don't cache
     if ($query_string != "") { set $skip_cache 1; }
-    if ($request_uri ~* "/wp-admin/|/xmlrpc.php|wp-.*.php|^/feed/*|/tag/.*/feed/*|index.php|sitemap(_index)?.xml") {
+
+    # Admin and other WordPress pages - don't cache
+    if ($request_uri ~* "/wp-admin/|/wp-login.php|/xmlrpc.php|wp-.*.php|^/feed/*|/tag/.*/feed/*|index.php|sitemap(_index)?.xml") {
         set $skip_cache 1;
     }
-    if ($http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in") {
+
+    # Logged in users or recent commenters - don't cache
+    if ($http_cookie ~* "comment_author|wordpress_[a-f0-9]+|wp-postpass|wordpress_no_cache|wordpress_logged_in|woocommerce_cart_hash|woocommerce_items_in_cart") {
+        set $skip_cache 1;
+    }
+
+    # WooCommerce pages - don't cache
+    if ($request_uri ~* "/cart.*|/checkout.*|/my-account.*") {
         set $skip_cache 1;
     }
 "#
     .to_string()
+}
+
+fn fastcgi_php_cache_directives() -> String {
+    r#"
+        # FastCGI Cache directives
+        fastcgi_cache_bypass $skip_cache;
+        fastcgi_no_cache $skip_cache;
+        fastcgi_cache WORDPRESS;
+        fastcgi_cache_valid 200 60m;
+        fastcgi_cache_valid 301 302 10m;
+        fastcgi_cache_valid 404 1m;
+        fastcgi_cache_methods GET HEAD;
+
+        # Add cache status header (HIT/MISS/BYPASS/EXPIRED)
+        add_header X-FastCGI-Cache $upstream_cache_status always;
+        add_header X-Cache-Status $upstream_cache_status always;"#
+        .to_string()
 }
 
 /// Add SSL configuration to existing site
