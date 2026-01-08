@@ -665,6 +665,18 @@ async fn site_actions_menu(site: &crate::database::sites::Site) -> Result<()> {
     loop {
         let mut items = vec!["Site info".to_string(), "SSL certificate".to_string()];
 
+        // Enable/Disable option
+        if site.enabled {
+            items.push("Disable site".to_string());
+        } else {
+            items.push("Enable site".to_string());
+        }
+
+        // Update site option (PHP version, cache type for WP)
+        if site.site_type == "wp" || site.site_type == "php" {
+            items.push("Update site".to_string());
+        }
+
         // Staging option
         if has_staging {
             items.push("Staging environment".to_string());
@@ -710,6 +722,23 @@ async fn site_actions_menu(site: &crate::database::sites::Site) -> Result<()> {
             continue;
         }
         idx += 1;
+
+        if selection == idx {
+            // Enable/Disable
+            site_enable_disable(&site.domain, site.enabled).await?;
+            // Refresh site status
+            return Ok(());
+        }
+        idx += 1;
+
+        // Update site option (only for wp/php sites)
+        if site.site_type == "wp" || site.site_type == "php" {
+            if selection == idx {
+                site_update_menu(site).await?;
+                return Ok(());
+            }
+            idx += 1;
+        }
 
         if selection == idx {
             // Staging
@@ -2068,6 +2097,174 @@ async fn service_menu() -> Result<()> {
 }
 
 // ============================================================================
+// Site Enable/Disable
+// ============================================================================
+
+async fn site_enable_disable(domain: &str, currently_enabled: bool) -> Result<()> {
+    let cli = create_cli(false, false);
+
+    if currently_enabled {
+        // Confirm disable
+        let confirm = Confirm::with_theme(&ColorfulTheme::default())
+            .with_prompt(format!("Disable site {}?", domain))
+            .default(false)
+            .interact()?;
+
+        if confirm {
+            commands::site::enable::disable(domain, &cli).await?;
+        }
+    } else {
+        // Enable without confirmation
+        commands::site::enable::enable(domain, &cli).await?;
+    }
+
+    press_enter_to_continue()?;
+    Ok(())
+}
+
+// Site Update Menu
+// ============================================================================
+
+async fn site_update_menu(site: &crate::database::sites::Site) -> Result<()> {
+    let is_wordpress = site.site_type == "wp";
+
+    let mut items = vec!["Change PHP version".to_string()];
+
+    if is_wordpress {
+        items.push("Change cache type".to_string());
+    }
+
+    items.push("Back".to_string());
+
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt(format!("Update {}", site.domain))
+        .items(&items)
+        .default(0)
+        .interact()?;
+
+    if selection == 0 {
+        // Change PHP version
+        site_update_php(&site.domain, site.php_version.as_deref()).await?;
+        return Ok(());
+    }
+
+    if is_wordpress && selection == 1 {
+        // Change cache type
+        site_update_cache(&site.domain, site.cache_type.as_deref()).await?;
+        return Ok(());
+    }
+
+    // Back
+    Ok(())
+}
+
+async fn site_update_php(domain: &str, current_version: Option<&str>) -> Result<()> {
+    use crate::config::php;
+
+    // Get installed PHP versions
+    let versions = php::get_installed_versions().await;
+
+    if versions.is_empty() {
+        println!(
+            "\n{} No PHP versions installed. Run 'rw stack install php' first.",
+            "Error:".red().bold()
+        );
+        press_enter_to_continue()?;
+        return Ok(());
+    }
+
+    // Build selection items with current version marked
+    let items: Vec<String> = versions
+        .iter()
+        .map(|v| {
+            if Some(v.as_str()) == current_version {
+                format!("PHP {} (current)", v)
+            } else {
+                format!("PHP {}", v)
+            }
+        })
+        .collect();
+
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Select PHP version")
+        .items(&items)
+        .default(0)
+        .interact()?;
+
+    let new_version = &versions[selection];
+
+    if Some(new_version.as_str()) == current_version {
+        println!("\n{} Already using PHP {}", "→".bright_cyan(), new_version);
+        press_enter_to_continue()?;
+        return Ok(());
+    }
+
+    let cli = create_cli(false, false);
+    commands::site::update::execute(domain, Some(new_version.clone()), None, &cli).await?;
+    press_enter_to_continue()?;
+    Ok(())
+}
+
+async fn site_update_cache(domain: &str, current_cache: Option<&str>) -> Result<()> {
+    use crate::commands::site::CacheType;
+
+    let cache_options = [
+        ("None", CacheType::None, "none"),
+        ("FastCGI (page cache)", CacheType::Fastcgi, "fastcgi"),
+        ("Redis (object cache)", CacheType::Redis, "redis"),
+    ];
+
+    // Build selection items with current cache marked
+    let items: Vec<String> = cache_options
+        .iter()
+        .map(|(label, _, key)| {
+            if Some(*key) == current_cache {
+                format!("{} (current)", label)
+            } else {
+                label.to_string()
+            }
+        })
+        .collect();
+
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Select cache type")
+        .items(&items)
+        .default(0)
+        .interact()?;
+
+    let (_, new_cache, new_cache_str) = &cache_options[selection];
+
+    if Some(*new_cache_str) == current_cache {
+        println!(
+            "\n{} Already using {} cache",
+            "→".bright_cyan(),
+            new_cache_str
+        );
+        press_enter_to_continue()?;
+        return Ok(());
+    }
+
+    // Warn about cache changes
+    println!(
+        "\n{} Changing cache type will update nginx config and WordPress plugins.",
+        "Note:".yellow().bold()
+    );
+
+    let confirm = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Continue?")
+        .default(true)
+        .interact()?;
+
+    if !confirm {
+        return Ok(());
+    }
+
+    let cli = create_cli(false, false);
+    commands::site::update::execute(domain, None, Some(*new_cache), &cli).await?;
+    press_enter_to_continue()?;
+    Ok(())
+}
+
 // Info Menu
 // ============================================================================
 

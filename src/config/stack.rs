@@ -203,10 +203,209 @@ pub async fn apply_nginx_config() -> Result<()> {
     )
     .await?;
 
+    // Create custom default site
+    apply_default_site().await?;
+
     // Test config
     shell::run_command("nginx", &["-t"]).await?;
 
     Ok(())
+}
+
+/// Apply custom default nginx site configuration
+async fn apply_default_site() -> Result<()> {
+    // Ensure directories exist
+    shell::run_command("mkdir", &["-p", "/var/www/html"]).await?;
+    shell::run_command("mkdir", &["-p", "/etc/nginx/sites-available"]).await?;
+    shell::run_command("mkdir", &["-p", "/etc/nginx/sites-enabled"]).await?;
+
+    // Write default site configuration
+    tokio::fs::write(
+        "/etc/nginx/sites-available/default",
+        generate_default_site_config(),
+    )
+    .await?;
+
+    // Write default HTML page
+    tokio::fs::write("/var/www/html/index.html", generate_default_html_page()).await?;
+
+    // Enable default site
+    let _ = tokio::fs::remove_file("/etc/nginx/sites-enabled/default").await;
+    tokio::fs::symlink(
+        "/etc/nginx/sites-available/default",
+        "/etc/nginx/sites-enabled/default",
+    )
+    .await?;
+
+    Ok(())
+}
+
+/// Generate default site nginx configuration
+fn generate_default_site_config() -> String {
+    r#"# RustWops Default Site
+# This page is shown when no site matches the request
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+
+    server_name _;
+
+    root /var/www/html;
+    index index.html;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    # Block access to hidden files
+    location ~ /\. {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+
+    # Disable logging for favicon and robots
+    location = /favicon.ico {
+        log_not_found off;
+        access_log off;
+    }
+
+    location = /robots.txt {
+        log_not_found off;
+        access_log off;
+    }
+}
+"#
+    .to_string()
+}
+
+/// Generate default HTML page
+fn generate_default_html_page() -> String {
+    r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to RustWops</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #e4e4e4;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+            max-width: 600px;
+        }
+        .logo {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(90deg, #e94560, #ff6b6b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .tagline {
+            font-size: 1.1rem;
+            color: #a0a0a0;
+            margin-bottom: 2rem;
+        }
+        .status {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .status-item {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin: 0.5rem 0;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: #4ade80;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .info {
+            font-size: 0.9rem;
+            color: #808080;
+        }
+        .info p {
+            margin: 0.5rem 0;
+        }
+        code {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            font-size: 0.85rem;
+        }
+        a {
+            color: #e94560;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🦀</div>
+        <h1>RustWops</h1>
+        <p class="tagline">High-performance web server stack management</p>
+
+        <div class="status">
+            <div class="status-item">
+                <span class="status-dot"></span>
+                <span>Server is running</span>
+            </div>
+            <div class="status-item">
+                <span class="status-dot"></span>
+                <span>Nginx is operational</span>
+            </div>
+        </div>
+
+        <div class="info">
+            <p>No site is configured for this domain.</p>
+            <p>Create a site with: <code>rw site create example.com</code></p>
+            <p>Or launch interactive mode: <code>sudo rw</code></p>
+        </div>
+    </div>
+</body>
+</html>
+"#
+    .to_string()
 }
 
 /// Generate nginx security snippet (based on WordOps locations.mustache)

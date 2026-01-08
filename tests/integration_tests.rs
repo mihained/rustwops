@@ -477,3 +477,371 @@ fn test_sysctl_config_applied() {
         "somaxconn sysctl should exist"
     );
 }
+
+// ============================================================================
+// Site Enable/Disable Tests
+// ============================================================================
+
+#[test]
+fn test_site_disable_enable() {
+    let domain = "test-enable-disable.local";
+    cleanup_site(domain);
+
+    // Create site
+    let (success, _, _) = run_rw(&["site", "create", domain, "--type", "php"]);
+    assert!(success, "site create should succeed");
+
+    // Verify site works
+    let (http_code, _) = curl_site(domain);
+    assert_eq!(http_code, 200, "site should return 200");
+
+    // Disable site
+    let (success, stdout, stderr) = run_rw(&["site", "disable", domain]);
+    assert!(
+        success,
+        "site disable should succeed: {} {}",
+        stdout, stderr
+    );
+    assert!(
+        stdout.contains("disabled successfully"),
+        "should confirm disable"
+    );
+
+    // Verify nginx symlink removed
+    let symlink_check = Command::new("bash")
+        .args(&[
+            "-c",
+            &format!("test -L /etc/nginx/sites-enabled/{}", domain),
+        ])
+        .output()
+        .expect("Failed to check symlink");
+    assert!(
+        !symlink_check.status.success(),
+        "nginx symlink should be removed"
+    );
+
+    // Enable site
+    let (success, stdout, stderr) = run_rw(&["site", "enable", domain]);
+    assert!(success, "site enable should succeed: {} {}", stdout, stderr);
+    assert!(
+        stdout.contains("enabled successfully"),
+        "should confirm enable"
+    );
+
+    // Verify site works again
+    let (http_code, _) = curl_site(domain);
+    assert_eq!(http_code, 200, "site should return 200 after enable");
+
+    // Verify nginx symlink restored
+    let symlink_check = Command::new("bash")
+        .args(&[
+            "-c",
+            &format!("test -L /etc/nginx/sites-enabled/{}", domain),
+        ])
+        .output()
+        .expect("Failed to check symlink");
+    assert!(
+        symlink_check.status.success(),
+        "nginx symlink should be restored"
+    );
+
+    // Cleanup
+    cleanup_site(domain);
+}
+
+#[test]
+fn test_disable_already_disabled_site() {
+    let domain = "test-disable-twice.local";
+    cleanup_site(domain);
+
+    // Create and disable site
+    let (success, _, _) = run_rw(&["site", "create", domain, "--type", "php"]);
+    assert!(success);
+    let (success, _, _) = run_rw(&["site", "disable", domain]);
+    assert!(success);
+
+    // Try to disable again - should succeed with message
+    let (success, stdout, _) = run_rw(&["site", "disable", domain]);
+    assert!(success, "disabling already disabled site should succeed");
+    assert!(
+        stdout.contains("already disabled"),
+        "should indicate already disabled"
+    );
+
+    // Cleanup
+    cleanup_site(domain);
+}
+
+#[test]
+fn test_enable_already_enabled_site() {
+    let domain = "test-enable-twice.local";
+    cleanup_site(domain);
+
+    // Create site (enabled by default)
+    let (success, _, _) = run_rw(&["site", "create", domain, "--type", "php"]);
+    assert!(success);
+
+    // Try to enable again - should succeed with message
+    let (success, stdout, _) = run_rw(&["site", "enable", domain]);
+    assert!(success, "enabling already enabled site should succeed");
+    assert!(
+        stdout.contains("already enabled"),
+        "should indicate already enabled"
+    );
+
+    // Cleanup
+    cleanup_site(domain);
+}
+
+// ============================================================================
+// Site Update Tests
+// ============================================================================
+
+#[test]
+fn test_site_update_php_version() {
+    let domain = "test-update-php.local";
+    cleanup_site(domain);
+
+    // Create site with PHP 8.3
+    let (success, _, _) = run_rw(&["site", "create", domain, "--type", "php", "--php", "8.3"]);
+    assert!(success, "site create should succeed");
+
+    // Verify site works
+    let (http_code, _) = curl_site(domain);
+    assert_eq!(http_code, 200, "site should return 200");
+
+    // Check PHP 8.2 is installed (skip test if not)
+    let php82_check = Command::new("bash")
+        .args(&["-c", "systemctl is-enabled php8.2-fpm 2>/dev/null"])
+        .output();
+    if !php82_check.map(|o| o.status.success()).unwrap_or(false) {
+        println!("PHP 8.2 not installed, skipping version change test");
+        cleanup_site(domain);
+        return;
+    }
+
+    // Update PHP version to 8.2
+    let (success, stdout, stderr) = run_rw(&["site", "update", domain, "--php", "8.2"]);
+    assert!(
+        success,
+        "site update PHP should succeed: {} {}",
+        stdout, stderr
+    );
+    assert!(
+        stdout.contains("PHP version: 8.2"),
+        "should confirm PHP change"
+    );
+
+    // Verify new PHP pool exists
+    let pool_check = Command::new("bash")
+        .args(&[
+            "-c",
+            &format!("test -f /etc/php/8.2/fpm/pool.d/{}.conf", domain),
+        ])
+        .output()
+        .expect("Failed to check pool");
+    assert!(pool_check.status.success(), "PHP 8.2 pool should exist");
+
+    // Verify old PHP pool removed
+    let old_pool_check = Command::new("bash")
+        .args(&[
+            "-c",
+            &format!("test -f /etc/php/8.3/fpm/pool.d/{}.conf", domain),
+        ])
+        .output()
+        .expect("Failed to check old pool");
+    assert!(
+        !old_pool_check.status.success(),
+        "PHP 8.3 pool should be removed"
+    );
+
+    // Verify site still works
+    let (http_code, _) = curl_site(domain);
+    assert_eq!(http_code, 200, "site should return 200 after PHP update");
+
+    // Cleanup
+    cleanup_site(domain);
+}
+
+#[test]
+fn test_site_update_invalid_php_version() {
+    let domain = "test-update-invalid-php.local";
+    cleanup_site(domain);
+
+    // Create site
+    let (success, _, _) = run_rw(&["site", "create", domain, "--type", "php"]);
+    assert!(success);
+
+    // Try to update to non-existent PHP version
+    let (success, _, stderr) = run_rw(&["site", "update", domain, "--php", "9.9"]);
+    assert!(!success, "update to invalid PHP should fail");
+    assert!(
+        stderr.contains("not installed"),
+        "should mention PHP not installed"
+    );
+
+    // Cleanup
+    cleanup_site(domain);
+}
+
+#[test]
+fn test_site_update_cache_type() {
+    let domain = "test-update-cache.local";
+    cleanup_site(domain);
+
+    // Create WordPress site with fastcgi cache
+    let (success, stdout, stderr) = run_rw(&[
+        "site", "create", domain, "--type", "wp", "--cache", "fastcgi",
+    ]);
+    assert!(
+        success,
+        "WP site create should succeed: {} {}",
+        stdout, stderr
+    );
+
+    // Give nginx time to fully reload after site creation
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    // Make a request to warm up the site and verify cache header present
+    // Use -D to dump headers (GET request, not HEAD) since HEAD bypasses PHP/FastCGI
+    let cache_check = Command::new("bash")
+        .args(&[
+            "-c",
+            &format!(
+                "curl -sD - http://localhost -H 'Host: {}' -o /dev/null 2>/dev/null | grep -i 'X-Cache-Status'",
+                domain
+            ),
+        ])
+        .output()
+        .expect("Failed to check cache header");
+    assert!(
+        cache_check.status.success(),
+        "should have X-Cache-Status header with fastcgi"
+    );
+
+    // Update to no cache
+    let (success, stdout, stderr) = run_rw(&["site", "update", domain, "--cache", "none"]);
+    assert!(
+        success,
+        "site update cache should succeed: {} {}",
+        stdout, stderr
+    );
+    assert!(
+        stdout.contains("Cache type: none"),
+        "should confirm cache change"
+    );
+
+    // Give nginx time to fully reload after cache change
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    // Verify cache header removed
+    // Use -D to dump headers (GET request, not HEAD) since HEAD bypasses PHP/FastCGI
+    let cache_check = Command::new("bash")
+        .args(&[
+            "-c",
+            &format!(
+                "curl -sD - http://localhost -H 'Host: {}' -o /dev/null 2>/dev/null | grep -i 'X-Cache-Status'",
+                domain
+            ),
+        ])
+        .output()
+        .expect("Failed to check cache header");
+    assert!(
+        !cache_check.status.success(),
+        "should not have X-Cache-Status header without cache"
+    );
+
+    // Update back to fastcgi
+    let (success, stdout, _) = run_rw(&["site", "update", domain, "--cache", "fastcgi"]);
+    assert!(success, "re-enabling cache should succeed");
+    assert!(stdout.contains("Cache type: fastcgi"));
+
+    // Give nginx time to fully reload after cache change
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    // Verify cache header restored
+    // Use -D to dump headers (GET request, not HEAD) since HEAD bypasses PHP/FastCGI
+    let cache_check = Command::new("bash")
+        .args(&[
+            "-c",
+            &format!(
+                "curl -sD - http://localhost -H 'Host: {}' -o /dev/null 2>/dev/null | grep -i 'X-Cache-Status'",
+                domain
+            ),
+        ])
+        .output()
+        .expect("Failed to check cache header");
+    assert!(
+        cache_check.status.success(),
+        "should have X-Cache-Status header after re-enabling"
+    );
+
+    // Cleanup
+    cleanup_site(domain);
+}
+
+#[test]
+fn test_site_update_cache_not_for_php_site() {
+    let domain = "test-update-cache-php.local";
+    cleanup_site(domain);
+
+    // Create PHP site (not WordPress)
+    let (success, _, _) = run_rw(&["site", "create", domain, "--type", "php"]);
+    assert!(success);
+
+    // Try to update cache type - should fail
+    let (success, _, stderr) = run_rw(&["site", "update", domain, "--cache", "fastcgi"]);
+    assert!(!success, "cache update on PHP site should fail");
+    assert!(
+        stderr.contains("WordPress") || stderr.contains("wp"),
+        "should mention WordPress only"
+    );
+
+    // Cleanup
+    cleanup_site(domain);
+}
+
+// ============================================================================
+// Default Nginx Page Tests
+// ============================================================================
+
+#[test]
+fn test_default_page_for_unconfigured_domain() {
+    // Access an unconfigured domain - should get RustWops default page
+    let output = Command::new("bash")
+        .args(&[
+            "-c",
+            "curl -s http://localhost -H 'Host: nonexistent.domain' | grep -i 'rustwops'",
+        ])
+        .output()
+        .expect("Failed to check default page");
+
+    assert!(
+        output.status.success(),
+        "default page should contain 'RustWops'"
+    );
+}
+
+#[test]
+fn test_default_page_content() {
+    // Check that default page has expected elements
+    let output = Command::new("bash")
+        .args(&["-c", "curl -s http://localhost -H 'Host: unknown.test'"])
+        .output()
+        .expect("Failed to fetch default page");
+
+    let content = String::from_utf8_lossy(&output.stdout);
+
+    assert!(
+        content.contains("RustWops"),
+        "should contain RustWops title"
+    );
+    assert!(
+        content.contains("rw site create"),
+        "should contain site create instructions"
+    );
+    assert!(
+        content.contains("Server is running"),
+        "should show server status"
+    );
+}
