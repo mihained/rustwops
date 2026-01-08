@@ -206,6 +206,9 @@ pub async fn apply_nginx_config() -> Result<()> {
     // Create custom default site
     apply_default_site().await?;
 
+    // Create cache directories required by nginx config
+    shell::run_command("mkdir", &["-p", "/var/cache/nginx/fastcgi"]).await?;
+
     // Test config
     shell::run_command("nginx", &["-t"]).await?;
 

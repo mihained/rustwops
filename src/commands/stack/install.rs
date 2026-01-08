@@ -329,6 +329,21 @@ async fn install_nodejs(version: &str, verbose: bool) -> Result<()> {
 
     shell::run_shell_script(pm2_install, verbose).await?;
 
+    // Create symlinks so node/npm/pm2 are available in PATH
+    let create_symlinks = r#"
+        export HOME=/root
+        export NVM_DIR="$HOME/.nvm"
+        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+        NODE_PATH=$(which node)
+        NPM_PATH=$(which npm)
+        PM2_PATH=$(which pm2)
+        ln -sf "$NODE_PATH" /usr/local/bin/node
+        ln -sf "$NPM_PATH" /usr/local/bin/npm
+        ln -sf "$PM2_PATH" /usr/local/bin/pm2
+    "#;
+
+    shell::run_shell_script(create_symlinks, verbose).await?;
+
     pb.finish_with_message(format!(
         "{} Node.js {} with PM2 installed",
         "✓".green(),
@@ -385,6 +400,7 @@ async fn initialize_rustwops(_verbose: bool) -> Result<()> {
         "/etc/ssl/rustwops",
         "/etc/nginx/snippets",
         "/var/cache/nginx",
+        "/var/cache/nginx/fastcgi",
     ];
 
     for dir in &dirs {
