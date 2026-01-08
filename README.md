@@ -9,6 +9,7 @@ A high-performance CLI tool for managing web server stacks on Ubuntu. Built in R
 - **SSL Certificates**: Automated Let's Encrypt certificates via acme.sh (HTTP and DNS validation)
 - **Staging Environments**: Create staging copies of production sites with database cloning
 - **Security Tools**: Fail2Ban, ClamAV antivirus, and MySQLTuner integration
+- **Log Viewing**: Comprehensive log viewing with filtering by site, status code, IP, and more
 - **Backup System**: Full site backups with optional S3 upload
 - **Interactive Mode**: User-friendly TUI for all operations
 - **Performance Optimized**: Tuned configurations based on WordOps best practices
@@ -65,7 +66,14 @@ sudo rw stack install nginx php mysql redis
 ### Create a WordPress Site
 
 ```bash
+# Basic WordPress site with SSL
 sudo rw site create example.com --type wp --ssl
+
+# WordPress with FastCGI page caching (recommended for high traffic)
+sudo rw site create example.com --type wp --ssl --cache fastcgi
+
+# WordPress with Redis object caching (reduces database load)
+sudo rw site create example.com --type wp --ssl --cache redis
 ```
 
 ### Create a PHP Site
@@ -100,6 +108,7 @@ rw site create <domain> [options]          # Create a new site
 rw site delete <domain> [--all]            # Delete a site
 rw site list                               # List all sites
 rw site info <domain>                      # Show site details
+rw site cache-purge <domain>               # Purge cache for WordPress site
 ```
 
 #### Site Creation Options
@@ -112,6 +121,20 @@ rw site info <domain>                      # Show site details
 | `--wildcard` | Issue wildcard certificate |
 | `--cache <type>` | Cache type: `fastcgi`, `redis` |
 | `--upstream <port>` | Upstream port for proxy/node sites |
+
+#### Cache Management (WordPress)
+
+```bash
+rw site cache-purge <domain>               # Purge all caches (page + object)
+rw site cache-purge <domain> --page        # Purge page cache only (FastCGI)
+rw site cache-purge <domain> --object      # Purge object cache only (Redis)
+```
+
+When using `--cache fastcgi` or `--cache redis`, RustWops automatically:
+- Installs and configures the **Nginx Helper** plugin for cache purging
+- Installs **Redis Object Cache** plugin for Redis caching
+- Adds `X-Cache-Status` header showing HIT/MISS/BYPASS
+- Configures automatic cache purging when content is edited
 
 ### SSL Certificates
 
@@ -148,9 +171,33 @@ rw security fail2ban ban <ip> -j <jail>    # Ban an IP address
 ### Backup
 
 ```bash
-rw backup create <domain> [--full]         # Create backup
-rw backup list [domain]                    # List backups
-rw backup restore <domain> <backup-id>     # Restore from backup
+rw backup create <domain>                  # Create full backup (files + DB)
+rw backup create <domain> --db-only        # Backup database only
+rw backup create <domain> --files-only     # Backup files only
+rw backup create <domain> --name "label"   # Custom backup name
+rw backup list                             # List all backups
+rw backup list --detailed                  # Detailed backup info
+rw backup restore <id>                     # Restore from backup ID
+rw backup restore <id> --target <domain>   # Restore to different domain
+rw backup delete <id>                      # Delete specific backup
+rw backup delete --older-than 30           # Delete backups older than 30 days
+```
+
+### Log Viewing
+
+```bash
+rw log site <domain>                       # View site access/error logs
+rw log site <domain> --errors              # Show only error logs
+rw log site <domain> --access              # Show only access logs
+rw log site <domain> --php                 # Show PHP-FPM logs for site
+rw log site <domain> --follow              # Follow logs in real-time
+rw log site <domain> --status 404          # Filter by HTTP status code
+rw log site <domain> --ip 1.2.3.4          # Filter by IP address
+rw log site                                # Summary of all sites logs
+rw log nginx [--errors]                    # View global nginx logs
+rw log php [version]                       # View PHP-FPM logs
+rw log mysql                               # View MySQL/MariaDB logs
+rw log fail2ban [--bans]                   # View Fail2Ban logs
 ```
 
 ### Services

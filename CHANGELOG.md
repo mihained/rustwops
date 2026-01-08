@@ -5,6 +5,63 @@ All notable changes to RustWops will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-01-08
+
+### Added
+- **WordPress caching with Nginx Helper and Redis Object Cache plugins**
+  - `rw site create --cache fastcgi` - FastCGI page caching with auto-purge
+  - `rw site create --cache redis` - Redis object caching for database queries
+  - Auto-installs and configures Nginx Helper plugin for cache management
+  - Auto-installs and configures Redis Object Cache plugin for Redis sites
+  - Cache automatically purges when posts/pages are edited in WordPress admin
+  - `RT_WP_NGINX_HELPER_CACHE_PATH` constant auto-configured in wp-config.php
+- **Cache purge command** for WordPress sites
+  - `rw site cache-purge <domain>` - Purge all caches
+  - `rw site cache-purge <domain> --page` - Purge FastCGI page cache only
+  - `rw site cache-purge <domain> --object` - Purge Redis object cache only
+  - `rw site cache-purge <domain> --all` - Purge both page and object cache
+  - Available in interactive mode under site actions
+- **Nginx FastCGI cache configuration**
+  - `fastcgi_cache_path` zone configured in nginx.conf
+  - Cache bypass for logged-in users, POST requests, admin pages
+  - WooCommerce cart/checkout pages excluded from cache
+  - `X-Cache-Status` header shows HIT/MISS/BYPASS status
+  - Access logs include cache status: `[HIT]`, `[MISS]`, `[BYPASS]`
+- **Backup command module** with full backup/restore functionality
+  - `rw backup create <domain>` - Create compressed backup (tar.gz)
+  - `rw backup create --db-only` - Backup database only
+  - `rw backup create --files-only` - Backup files only
+  - `rw backup create --name <label>` - Custom backup name
+  - `rw backup restore <id>` - Restore from backup ID
+  - `rw backup restore --target <domain>` - Restore to different domain
+  - `rw backup restore --db-only/--files-only` - Selective restore
+  - `rw backup list` - List all backups in table format
+  - `rw backup list --detailed` - Detailed backup information
+  - `rw backup delete <id>` - Delete specific backup
+  - `rw backup delete --older-than <days>` - Retention policy cleanup
+  - MySQL dumps with gzip compression
+  - Metadata JSON with site type, PHP version, DB name
+- **Log viewing command module** with comprehensive log access
+  - `rw log site <domain>` - View site-specific nginx access/error logs
+  - `rw log site --errors` - Show only error logs
+  - `rw log site --access` - Show only access logs
+  - `rw log site --php` - Show PHP-FPM logs for site
+  - `rw log site --follow` - Follow logs in real-time (Ctrl+C to stop)
+  - `rw log site --status <code>` - Filter by HTTP status code (e.g., 404, 500)
+  - `rw log site --ip <address>` - Filter by IP address
+  - `rw log site` (no domain) - Summary of all sites logs
+  - `rw log nginx` - View global nginx access/error logs
+  - `rw log php [version]` - View PHP-FPM logs by version
+  - `rw log mysql` - View MySQL/MariaDB logs (journalctl fallback)
+  - `rw log fail2ban` - View Fail2Ban logs
+  - `rw log fail2ban --bans` - Show only ban/unban actions
+- **Interactive menus** for Logs, Backup, and Cache Purge in TUI mode
+
+### Changed
+- Main menu now includes Logs and Backup options
+- WordPress site actions include "Purge cache" for WP sites with caching
+- Access log format includes cache status for sites with FastCGI cache
+
 ## [0.3.0] - 2025-01-07
 
 ### Added
