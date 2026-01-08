@@ -1,3 +1,4 @@
+pub mod backups;
 pub mod databases;
 pub mod sites;
 pub mod staging;
