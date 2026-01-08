@@ -149,8 +149,15 @@ async fn update_php_version(
     });
 
     // Regenerate nginx config with new PHP version
-    nginx::create_site_config(domain, site_type, new_version, cache_type, &site.webroot, None)
-        .await?;
+    nginx::create_site_config(
+        domain,
+        site_type,
+        new_version,
+        cache_type,
+        &site.webroot,
+        None,
+    )
+    .await?;
 
     // Create new PHP-FPM pool
     php::create_pool(domain, new_version).await?;
@@ -373,10 +380,7 @@ async fn update_wordpress_cache_plugins(
         println!(" {}", "done".green());
     } else if !needs_redis_cache && had_redis_cache {
         // Disable and deactivate Redis Object Cache
-        print!(
-            "    {} Disabling Redis Object Cache...",
-            "→".bright_cyan()
-        );
+        print!("    {} Disabling Redis Object Cache...", "→".bright_cyan());
         std::io::Write::flush(&mut std::io::stdout()).ok();
 
         // Disable Redis object cache

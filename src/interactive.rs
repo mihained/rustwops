@@ -2128,36 +2128,34 @@ async fn site_enable_disable(domain: &str, currently_enabled: bool) -> Result<()
 async fn site_update_menu(site: &crate::database::sites::Site) -> Result<()> {
     let is_wordpress = site.site_type == "wp";
 
-    loop {
-        let mut items = vec!["Change PHP version".to_string()];
+    let mut items = vec!["Change PHP version".to_string()];
 
-        if is_wordpress {
-            items.push("Change cache type".to_string());
-        }
+    if is_wordpress {
+        items.push("Change cache type".to_string());
+    }
 
-        items.push("Back".to_string());
+    items.push("Back".to_string());
 
-        let selection = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt(format!("Update {}", site.domain))
-            .items(&items)
-            .default(0)
-            .interact()?;
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt(format!("Update {}", site.domain))
+        .items(&items)
+        .default(0)
+        .interact()?;
 
-        if selection == 0 {
-            // Change PHP version
-            site_update_php(&site.domain, site.php_version.as_deref()).await?;
-            return Ok(());
-        }
-
-        if is_wordpress && selection == 1 {
-            // Change cache type
-            site_update_cache(&site.domain, site.cache_type.as_deref()).await?;
-            return Ok(());
-        }
-
-        // Back
+    if selection == 0 {
+        // Change PHP version
+        site_update_php(&site.domain, site.php_version.as_deref()).await?;
         return Ok(());
     }
+
+    if is_wordpress && selection == 1 {
+        // Change cache type
+        site_update_cache(&site.domain, site.cache_type.as_deref()).await?;
+        return Ok(());
+    }
+
+    // Back
+    Ok(())
 }
 
 async fn site_update_php(domain: &str, current_version: Option<&str>) -> Result<()> {
@@ -2210,7 +2208,7 @@ async fn site_update_php(domain: &str, current_version: Option<&str>) -> Result<
 async fn site_update_cache(domain: &str, current_cache: Option<&str>) -> Result<()> {
     use crate::commands::site::CacheType;
 
-    let cache_options = vec![
+    let cache_options = [
         ("None", CacheType::None, "none"),
         ("FastCGI (page cache)", CacheType::Fastcgi, "fastcgi"),
         ("Redis (object cache)", CacheType::Redis, "redis"),
