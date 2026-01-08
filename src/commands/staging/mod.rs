@@ -81,8 +81,13 @@ impl std::fmt::Display for SyncDirection {
 }
 
 pub async fn execute(command: StagingCommand, cli: &Cli) -> Result<()> {
+    use crate::utils::system::require_root;
+
     match command {
-        StagingCommand::Create { domain, prefix } => create_staging(&domain, &prefix, cli).await,
+        StagingCommand::Create { domain, prefix } => {
+            require_root("create staging environment")?;
+            create_staging(&domain, &prefix, cli).await
+        }
         StagingCommand::Sync {
             domain,
             direction,
@@ -91,6 +96,7 @@ pub async fn execute(command: StagingCommand, cli: &Cli) -> Result<()> {
             exclude_tables,
             dry_run,
         } => {
+            require_root("sync staging environment")?;
             sync_staging(
                 &domain,
                 direction,
@@ -102,7 +108,11 @@ pub async fn execute(command: StagingCommand, cli: &Cli) -> Result<()> {
             )
             .await
         }
-        StagingCommand::Delete { domain } => delete_staging(&domain, cli).await,
+        StagingCommand::Delete { domain } => {
+            require_root("delete staging environment")?;
+            delete_staging(&domain, cli).await
+        }
+        // Read-only commands - no root required
         StagingCommand::List => list_staging().await,
         StagingCommand::Info { domain } => show_staging_info(&domain).await,
     }

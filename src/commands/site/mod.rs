@@ -228,6 +228,8 @@ pub enum Pm2Action {
 }
 
 pub async fn execute(command: SiteCommand, cli: &Cli) -> anyhow::Result<()> {
+    use crate::utils::system::require_root;
+
     match command {
         SiteCommand::Create {
             domain,
@@ -240,6 +242,7 @@ pub async fn execute(command: SiteCommand, cli: &Cli) -> anyhow::Result<()> {
             dns,
             upstream,
         } => {
+            require_root("create a site")?;
             // Auto-detect PHP version if not specified
             let php_version = match php {
                 Some(v) => v,
@@ -270,17 +273,28 @@ pub async fn execute(command: SiteCommand, cli: &Cli) -> anyhow::Result<()> {
             all,
             files,
             db,
-        } => delete::execute(&domain, all, files, db, cli).await,
+        } => {
+            require_root("delete a site")?;
+            delete::execute(&domain, all, files, db, cli).await
+        }
         SiteCommand::Update { domain, php, cache } => {
+            require_root("update a site")?;
             update::execute(&domain, php, cache, cli).await
         }
+        // Read-only commands - no root required
         SiteCommand::List { r#type, detailed } => list::execute(r#type, detailed, cli).await,
         SiteCommand::Info { domain } => info::execute(&domain, cli).await,
         SiteCommand::Log { .. } => {
             anyhow::bail!("Site log not yet implemented. Coming soon!")
         }
-        SiteCommand::Enable { domain } => enable::enable(&domain, cli).await,
-        SiteCommand::Disable { domain } => enable::disable(&domain, cli).await,
+        SiteCommand::Enable { domain } => {
+            require_root("enable a site")?;
+            enable::enable(&domain, cli).await
+        }
+        SiteCommand::Disable { domain } => {
+            require_root("disable a site")?;
+            enable::disable(&domain, cli).await
+        }
         SiteCommand::Wp { .. } => {
             anyhow::bail!("WP-CLI wrapper not yet implemented. Coming soon!")
         }
@@ -292,6 +306,9 @@ pub async fn execute(command: SiteCommand, cli: &Cli) -> anyhow::Result<()> {
             all,
             page,
             object,
-        } => cache::purge(&domain, all, page, object, cli).await,
+        } => {
+            require_root("purge cache")?;
+            cache::purge(&domain, all, page, object, cli).await
+        }
     }
 }

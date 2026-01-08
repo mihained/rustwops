@@ -53,11 +53,26 @@ pub enum ServiceCommand {
 }
 
 pub async fn execute(command: ServiceCommand, _cli: &Cli) -> Result<()> {
+    use crate::utils::system::require_root;
+
     match command {
-        ServiceCommand::Start { service } => start_service(&service).await,
-        ServiceCommand::Stop { service } => stop_service(&service).await,
-        ServiceCommand::Restart { service } => restart_service(&service).await,
-        ServiceCommand::Reload { service } => reload_service(&service).await,
+        ServiceCommand::Start { service } => {
+            require_root("start service")?;
+            start_service(&service).await
+        }
+        ServiceCommand::Stop { service } => {
+            require_root("stop service")?;
+            stop_service(&service).await
+        }
+        ServiceCommand::Restart { service } => {
+            require_root("restart service")?;
+            restart_service(&service).await
+        }
+        ServiceCommand::Reload { service } => {
+            require_root("reload service")?;
+            reload_service(&service).await
+        }
+        // Read-only commands - no root required
         ServiceCommand::Status { service } => show_status(service.as_deref()).await,
         ServiceCommand::Log { service, tail, n } => show_logs(&service, tail, n).await,
     }

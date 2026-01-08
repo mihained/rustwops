@@ -71,13 +71,23 @@ pub enum Fail2banAction {
 }
 
 pub async fn execute(command: SecurityCommand, cli: &Cli) -> Result<()> {
+    use crate::utils::system::require_root;
+
     match command {
-        SecurityCommand::Mysqltuner => run_mysqltuner(cli.verbose).await,
+        SecurityCommand::Mysqltuner => {
+            require_root("run MySQLTuner")?;
+            run_mysqltuner(cli.verbose).await
+        }
         SecurityCommand::Scan { path, quarantine } => {
+            require_root("run security scan")?;
             run_clamav_scan(path.as_deref(), quarantine, cli.verbose).await
         }
-        SecurityCommand::UpdateDefinitions => update_clamav_definitions(cli.verbose).await,
+        SecurityCommand::UpdateDefinitions => {
+            require_root("update ClamAV definitions")?;
+            update_clamav_definitions(cli.verbose).await
+        }
         SecurityCommand::Fail2ban { action } => execute_fail2ban(action, cli.verbose).await,
+        // Read-only command - no root required
         SecurityCommand::Status => show_security_status(cli.verbose).await,
     }
 }
@@ -216,6 +226,8 @@ async fn update_clamav_definitions(verbose: bool) -> Result<()> {
 // =============================================================================
 
 async fn execute_fail2ban(action: Fail2banAction, _verbose: bool) -> Result<()> {
+    use crate::utils::system::require_root;
+
     // Check if fail2ban is installed
     if shell::run_command("which", &["fail2ban-client"])
         .await
@@ -224,6 +236,14 @@ async fn execute_fail2ban(action: Fail2banAction, _verbose: bool) -> Result<()> 
         println!("{} Fail2Ban is not installed.", "✗".red().bold());
         println!("  Install it with: rw stack install fail2ban\n");
         return Ok(());
+    }
+
+    // Check root requirement for modifying operations
+    match &action {
+        Fail2banAction::Ban { .. } => require_root("ban IP address")?,
+        Fail2banAction::Unban { .. } => require_root("unban IP address")?,
+        // Status, Banned, Logs are read-only
+        _ => {}
     }
 
     match action {

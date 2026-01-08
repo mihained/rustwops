@@ -39,3 +39,18 @@ pub async fn ubuntu_version() -> Option<String> {
 pub fn has_systemd() -> bool {
     std::path::Path::new("/run/systemd/system").exists()
 }
+
+/// Require root privileges for an operation, showing helpful error if not root
+pub fn require_root(operation: &str) -> anyhow::Result<()> {
+    if is_root() {
+        Ok(())
+    } else {
+        anyhow::bail!(
+            "This operation requires elevated privileges.\n\n\
+             To {}, run:\n  \
+             sudo rw {}",
+            operation,
+            std::env::args().skip(1).collect::<Vec<_>>().join(" ")
+        )
+    }
+}

@@ -22,10 +22,32 @@ pub async fn init() -> Result<()> {
     // Run migrations
     conn.execute_batch(SCHEMA)?;
 
+    // Set permissions to allow read access for non-root users
+    set_db_permissions().await;
+
     DB.set(Mutex::new(conn))
         .map_err(|_| anyhow::anyhow!("Database already initialized"))?;
 
     Ok(())
+}
+
+/// Set database permissions to allow read access for non-root users
+async fn set_db_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    // Set directory permissions: rwxr-xr-x (755)
+    if let Ok(metadata) = std::fs::metadata("/var/lib/rustwops") {
+        let mut perms = metadata.permissions();
+        perms.set_mode(0o755);
+        let _ = std::fs::set_permissions("/var/lib/rustwops", perms);
+    }
+
+    // Set database file permissions: rw-r--r-- (644)
+    if let Ok(metadata) = std::fs::metadata(DB_PATH) {
+        let mut perms = metadata.permissions();
+        perms.set_mode(0o644);
+        let _ = std::fs::set_permissions(DB_PATH, perms);
+    }
 }
 
 /// Get database connection (auto-initializes if needed)
