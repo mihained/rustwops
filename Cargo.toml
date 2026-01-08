@@ -1,6 +1,6 @@
 [package]
 name = "rustwops"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 authors = ["RustWops Contributors"]
 description = "High-performance CLI for managing web server stacks"
