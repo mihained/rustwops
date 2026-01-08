@@ -83,6 +83,12 @@ pub enum Commands {
         command: commands::security::SecurityCommand,
     },
 
+    /// View logs (sites, nginx, php, mysql, fail2ban)
+    Log {
+        #[command(subcommand)]
+        command: commands::log::LogCommand,
+    },
+
     /// Start the REST API server (for dashboard)
     #[cfg(feature = "api")]
     Api {

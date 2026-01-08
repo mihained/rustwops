@@ -91,6 +91,9 @@ async fn run() -> anyhow::Result<()> {
         Commands::Security { command } => {
             commands::security::execute(command.clone(), &cli).await?;
         }
+        Commands::Log { command } => {
+            commands::log::execute(command.clone(), &cli).await?;
+        }
         #[cfg(feature = "api")]
         Commands::Api { bind, port } => {
             commands::api::start_server(bind, *port).await?;

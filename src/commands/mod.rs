@@ -1,5 +1,6 @@
 pub mod backup;
 pub mod info;
+pub mod log;
 pub mod security;
 pub mod service;
 pub mod site;
