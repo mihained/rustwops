@@ -405,8 +405,8 @@ async fn initialize_rustwops(_verbose: bool) -> Result<()> {
         );
     }
 
-    // Initialize SQLite database
-    crate::database::init().await?;
+    // Initialize SQLite database (if not already done)
+    crate::database::ensure_initialized().await?;
 
     pb.finish_with_message(format!("{} RustWops initialized", "✓".green()));
     Ok(())

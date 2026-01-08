@@ -79,3 +79,28 @@ pub async fn file_exists(path: &str) -> bool {
 pub async fn command_exists(command: &str) -> bool {
     which::which(command).is_ok()
 }
+
+/// Run a command interactively (inherits stdin/stdout/stderr)
+/// Used for commands like `tail -f` that need to run until interrupted
+pub async fn run_command_interactive(program: &str, args: &[&str]) -> Result<()> {
+    use std::process::Stdio;
+
+    let status = Command::new(program)
+        .args(args)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .await?;
+
+    // For interactive commands, Ctrl+C (SIGINT) is expected and not an error
+    if status.success() || status.code() == Some(130) {
+        Ok(())
+    } else {
+        anyhow::bail!(
+            "Command '{}' failed with exit code {:?}",
+            program,
+            status.code()
+        )
+    }
+}
