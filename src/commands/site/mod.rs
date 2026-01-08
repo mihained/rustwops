@@ -2,6 +2,7 @@ use clap::Subcommand;
 
 use crate::Cli;
 
+pub mod cache;
 pub mod create;
 pub mod delete;
 pub mod info;
@@ -145,6 +146,24 @@ pub enum SiteCommand {
         #[arg(value_enum)]
         action: Pm2Action,
     },
+
+    /// Purge cache for a WordPress site
+    CachePurge {
+        /// Domain name
+        domain: String,
+
+        /// Purge all caches (FastCGI + Redis object cache)
+        #[arg(long)]
+        all: bool,
+
+        /// Purge only FastCGI/page cache
+        #[arg(long)]
+        page: bool,
+
+        /// Purge only Redis object cache
+        #[arg(long)]
+        object: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
@@ -270,5 +289,11 @@ pub async fn execute(command: SiteCommand, cli: &Cli) -> anyhow::Result<()> {
         SiteCommand::Pm2 { .. } => {
             anyhow::bail!("PM2 wrapper not yet implemented. Coming soon!")
         }
+        SiteCommand::CachePurge {
+            domain,
+            all,
+            page,
+            object,
+        } => cache::purge(&domain, all, page, object, cli).await,
     }
 }

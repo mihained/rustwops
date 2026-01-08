@@ -17,7 +17,9 @@ pub async fn run() -> Result<()> {
         match selection {
             MainMenu::Stack => stack_menu().await?,
             MainMenu::Site => site_menu().await?,
+            MainMenu::Backup => backup_menu().await?,
             MainMenu::Security => security_menu().await?,
+            MainMenu::Logs => logs_menu().await?,
             MainMenu::Service => service_menu().await?,
             MainMenu::Info => info_menu().await?,
             MainMenu::Exit => {
@@ -54,7 +56,9 @@ fn print_banner() {
 enum MainMenu {
     Stack,
     Site,
+    Backup,
     Security,
+    Logs,
     Service,
     Info,
     Exit,
@@ -64,7 +68,9 @@ fn main_menu() -> Result<MainMenu> {
     let items = vec![
         "Stack      Manage server components (Nginx, PHP, MySQL, Redis)",
         "Sites      Create and manage websites",
+        "Backup     Create and restore site backups",
         "Security   Fail2Ban, ClamAV, MySQLTuner tools",
+        "Logs       View site, nginx, php, mysql, fail2ban logs",
         "Services   Start, stop, restart services",
         "Info       Show system information",
         "Exit",
@@ -79,9 +85,11 @@ fn main_menu() -> Result<MainMenu> {
     Ok(match selection {
         0 => MainMenu::Stack,
         1 => MainMenu::Site,
-        2 => MainMenu::Security,
-        3 => MainMenu::Service,
-        4 => MainMenu::Info,
+        2 => MainMenu::Backup,
+        3 => MainMenu::Security,
+        4 => MainMenu::Logs,
+        5 => MainMenu::Service,
+        6 => MainMenu::Info,
         _ => MainMenu::Exit,
     })
 }
@@ -666,6 +674,7 @@ async fn site_actions_menu(site: &crate::database::sites::Site) -> Result<()> {
 
         // WordPress-specific actions
         if is_wordpress {
+            items.push("Purge cache".to_string());
             items.push("Reset admin password".to_string());
             items.push("WP-CLI commands".to_string());
         }
@@ -715,6 +724,13 @@ async fn site_actions_menu(site: &crate::database::sites::Site) -> Result<()> {
         idx += 1;
 
         if is_wordpress {
+            if selection == idx {
+                // Purge cache
+                cache_purge_menu(&site.domain).await?;
+                continue;
+            }
+            idx += 1;
+
             if selection == idx {
                 // Reset password
                 wp_reset_password(&site.domain).await?;
@@ -1124,6 +1140,42 @@ async fn wp_cli_shell(domain: &str) -> Result<()> {
     }
 }
 
+async fn cache_purge_menu(domain: &str) -> Result<()> {
+    let items = vec![
+        "Purge all caches (page + object)",
+        "Purge page cache only (FastCGI/Redis)",
+        "Purge object cache only (Redis)",
+        "← Back",
+    ];
+
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt(format!("Cache purge for {}", domain))
+        .items(&items)
+        .default(0)
+        .interact()?;
+
+    match selection {
+        0 => {
+            commands::site::cache::purge(domain, true, false, false, &create_cli(false, false))
+                .await?;
+            press_enter_to_continue()?;
+        }
+        1 => {
+            commands::site::cache::purge(domain, false, true, false, &create_cli(false, false))
+                .await?;
+            press_enter_to_continue()?;
+        }
+        2 => {
+            commands::site::cache::purge(domain, false, false, true, &create_cli(false, false))
+                .await?;
+            press_enter_to_continue()?;
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
 async fn site_delete_confirm(domain: &str) -> Result<()> {
     let delete_options = vec![
         "Delete everything (files + database)",
@@ -1354,6 +1406,582 @@ async fn site_create() -> Result<()> {
         &cli,
     )
     .await?;
+
+    press_enter_to_continue()?;
+    Ok(())
+}
+
+// ============================================================================
+// Logs Menu
+// ============================================================================
+
+async fn logs_menu() -> Result<()> {
+    loop {
+        let items = vec![
+            "View site logs",
+            "View all sites (summary)",
+            "Nginx logs",
+            "PHP-FPM logs",
+            "MySQL/MariaDB logs",
+            "Fail2Ban logs",
+            "← Back",
+        ];
+
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Log Viewer")
+            .items(&items)
+            .default(0)
+            .interact()?;
+
+        match selection {
+            0 => view_site_logs_interactive().await?,
+            1 => view_all_sites_logs().await?,
+            2 => view_nginx_logs_interactive().await?,
+            3 => view_php_logs_interactive().await?,
+            4 => view_mysql_logs_interactive().await?,
+            5 => view_fail2ban_logs_interactive().await?,
+            _ => return Ok(()),
+        }
+    }
+}
+
+async fn view_site_logs_interactive() -> Result<()> {
+    // Get list of sites
+    let sites = crate::database::sites::list().await?;
+
+    if sites.is_empty() {
+        println!("\n{} No sites found", "!".yellow());
+        press_enter_to_continue()?;
+        return Ok(());
+    }
+
+    // Build site list for selection
+    let site_items: Vec<String> = sites.iter().map(|s| s.domain.clone()).collect();
+
+    let site_idx = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Select site")
+        .items(&site_items)
+        .default(0)
+        .interact()?;
+
+    let domain = &sites[site_idx].domain;
+
+    // Log type selection
+    let log_types = vec![
+        "Error logs only",
+        "Access logs only",
+        "PHP-FPM logs",
+        "All logs",
+    ];
+
+    let log_type = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Log type")
+        .items(&log_types)
+        .default(0)
+        .interact()?;
+
+    let (errors, access, php) = match log_type {
+        0 => (true, false, false),
+        1 => (false, true, false),
+        2 => (false, false, true),
+        _ => (false, false, false),
+    };
+
+    // Lines to show
+    let lines: usize = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Number of lines")
+        .default(50)
+        .interact_text()?;
+
+    // Follow option
+    let follow = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Follow log in real-time? (Ctrl+C to stop)")
+        .default(false)
+        .interact()?;
+
+    commands::log::execute(
+        commands::log::LogCommand::Site {
+            domain: Some(domain.clone()),
+            errors,
+            access,
+            php,
+            follow,
+            n: lines,
+            status: None,
+            ip: None,
+        },
+        &create_cli(false, false),
+    )
+    .await?;
+
+    if !follow {
+        press_enter_to_continue()?;
+    }
+    Ok(())
+}
+
+async fn view_all_sites_logs() -> Result<()> {
+    let errors_only = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Show only errors?")
+        .default(true)
+        .interact()?;
+
+    commands::log::execute(
+        commands::log::LogCommand::Site {
+            domain: None,
+            errors: errors_only,
+            access: !errors_only,
+            php: false,
+            follow: false,
+            n: 50,
+            status: None,
+            ip: None,
+        },
+        &create_cli(false, false),
+    )
+    .await?;
+
+    press_enter_to_continue()?;
+    Ok(())
+}
+
+async fn view_nginx_logs_interactive() -> Result<()> {
+    let log_types = vec!["Error log", "Access log"];
+
+    let log_type = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Log type")
+        .items(&log_types)
+        .default(0)
+        .interact()?;
+
+    let errors = log_type == 0;
+
+    let lines: usize = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Number of lines")
+        .default(50)
+        .interact_text()?;
+
+    let follow = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Follow log in real-time?")
+        .default(false)
+        .interact()?;
+
+    commands::log::execute(
+        commands::log::LogCommand::Nginx {
+            errors,
+            follow,
+            n: lines,
+        },
+        &create_cli(false, false),
+    )
+    .await?;
+
+    if !follow {
+        press_enter_to_continue()?;
+    }
+    Ok(())
+}
+
+async fn view_php_logs_interactive() -> Result<()> {
+    // Get installed PHP versions
+    let installed = crate::config::php::get_installed_versions().await;
+
+    if installed.is_empty() {
+        println!("\n{} No PHP versions installed", "!".yellow());
+        press_enter_to_continue()?;
+        return Ok(());
+    }
+
+    let version_idx = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("PHP version")
+        .items(&installed)
+        .default(0)
+        .interact()?;
+
+    let version = &installed[version_idx];
+
+    let lines: usize = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Number of lines")
+        .default(50)
+        .interact_text()?;
+
+    let follow = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Follow log in real-time?")
+        .default(false)
+        .interact()?;
+
+    commands::log::execute(
+        commands::log::LogCommand::Php {
+            version: Some(version.clone()),
+            follow,
+            n: lines,
+        },
+        &create_cli(false, false),
+    )
+    .await?;
+
+    if !follow {
+        press_enter_to_continue()?;
+    }
+    Ok(())
+}
+
+async fn view_mysql_logs_interactive() -> Result<()> {
+    let lines: usize = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Number of lines")
+        .default(50)
+        .interact_text()?;
+
+    let follow = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Follow log in real-time?")
+        .default(false)
+        .interact()?;
+
+    commands::log::execute(
+        commands::log::LogCommand::Mysql { follow, n: lines },
+        &create_cli(false, false),
+    )
+    .await?;
+
+    if !follow {
+        press_enter_to_continue()?;
+    }
+    Ok(())
+}
+
+async fn view_fail2ban_logs_interactive() -> Result<()> {
+    let bans_only = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Show only ban/unban actions?")
+        .default(true)
+        .interact()?;
+
+    let lines: usize = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Number of lines")
+        .default(50)
+        .interact_text()?;
+
+    let follow = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Follow log in real-time?")
+        .default(false)
+        .interact()?;
+
+    commands::log::execute(
+        commands::log::LogCommand::Fail2ban {
+            follow,
+            n: lines,
+            bans: bans_only,
+        },
+        &create_cli(false, false),
+    )
+    .await?;
+
+    if !follow {
+        press_enter_to_continue()?;
+    }
+    Ok(())
+}
+
+// ============================================================================
+// Backup Menu
+// ============================================================================
+
+async fn backup_menu() -> Result<()> {
+    loop {
+        let items = vec![
+            "Create backup",
+            "Restore from backup",
+            "List backups",
+            "Delete backup",
+            "← Back",
+        ];
+
+        let selection = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Backup Management")
+            .items(&items)
+            .default(0)
+            .interact()?;
+
+        match selection {
+            0 => create_backup_interactive().await?,
+            1 => restore_backup_interactive().await?,
+            2 => list_backups_interactive().await?,
+            3 => delete_backup_interactive().await?,
+            _ => return Ok(()),
+        }
+    }
+}
+
+async fn create_backup_interactive() -> Result<()> {
+    // Get list of sites
+    let sites = crate::database::sites::list().await?;
+
+    if sites.is_empty() {
+        println!("\n{} No sites found", "!".yellow());
+        press_enter_to_continue()?;
+        return Ok(());
+    }
+
+    // Build site list for selection
+    let site_items: Vec<String> = sites.iter().map(|s| s.domain.clone()).collect();
+
+    let site_idx = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Select site to backup")
+        .items(&site_items)
+        .default(0)
+        .interact()?;
+
+    let domain = &sites[site_idx].domain;
+
+    // Backup type
+    let backup_types = vec![
+        "Full backup (files + database)",
+        "Database only",
+        "Files only",
+    ];
+
+    let backup_type = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Backup type")
+        .items(&backup_types)
+        .default(0)
+        .interact()?;
+
+    let (db_only, files_only) = match backup_type {
+        1 => (true, false),
+        2 => (false, true),
+        _ => (false, false),
+    };
+
+    // Optional backup name
+    let name: String = Input::with_theme(&ColorfulTheme::default())
+        .with_prompt("Backup name (optional, press Enter to skip)")
+        .allow_empty(true)
+        .interact_text()?;
+
+    let name = if name.is_empty() { None } else { Some(name) };
+
+    commands::backup::execute(
+        commands::backup::BackupCommand::Create {
+            domain: Some(domain.clone()),
+            name,
+            db_only,
+            files_only,
+        },
+        &create_cli(false, false),
+    )
+    .await?;
+
+    press_enter_to_continue()?;
+    Ok(())
+}
+
+async fn restore_backup_interactive() -> Result<()> {
+    // Get list of backups
+    let backups = crate::database::backups::list(None).await?;
+
+    if backups.is_empty() {
+        println!("\n{} No backups found", "!".yellow());
+        press_enter_to_continue()?;
+        return Ok(());
+    }
+
+    // Build backup list for selection
+    let backup_items: Vec<String> = backups
+        .iter()
+        .map(|b| {
+            format!(
+                "{} - {} ({})",
+                b.id,
+                b.domain,
+                b.backup_name.as_deref().unwrap_or("unnamed")
+            )
+        })
+        .collect();
+
+    let backup_idx = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Select backup to restore")
+        .items(&backup_items)
+        .default(0)
+        .interact()?;
+
+    let backup_id = backups[backup_idx].id.to_string();
+
+    // Restore to different domain?
+    let restore_to_different = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Restore to a different domain?")
+        .default(false)
+        .interact()?;
+
+    let target = if restore_to_different {
+        let sites = crate::database::sites::list().await?;
+        if sites.is_empty() {
+            println!("\n{} No sites available as restore target", "!".yellow());
+            press_enter_to_continue()?;
+            return Ok(());
+        }
+
+        let site_items: Vec<String> = sites.iter().map(|s| s.domain.clone()).collect();
+
+        let site_idx = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Select target site")
+            .items(&site_items)
+            .default(0)
+            .interact()?;
+
+        Some(sites[site_idx].domain.clone())
+    } else {
+        None
+    };
+
+    // Restore type
+    let restore_types = vec![
+        "Full restore (files + database)",
+        "Database only",
+        "Files only",
+    ];
+
+    let restore_type = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Restore type")
+        .items(&restore_types)
+        .default(0)
+        .interact()?;
+
+    let (db_only, files_only) = match restore_type {
+        1 => (true, false),
+        2 => (false, true),
+        _ => (false, false),
+    };
+
+    // Confirm restore
+    let confirm = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("This will overwrite existing data. Continue?")
+        .default(false)
+        .interact()?;
+
+    if !confirm {
+        println!("{} Restore cancelled", "!".yellow());
+        press_enter_to_continue()?;
+        return Ok(());
+    }
+
+    commands::backup::execute(
+        commands::backup::BackupCommand::Restore {
+            backup: backup_id,
+            target,
+            db_only,
+            files_only,
+        },
+        &create_cli(false, true), // yes=true since we already confirmed
+    )
+    .await?;
+
+    press_enter_to_continue()?;
+    Ok(())
+}
+
+async fn list_backups_interactive() -> Result<()> {
+    let detailed = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Show detailed information?")
+        .default(false)
+        .interact()?;
+
+    commands::backup::execute(
+        commands::backup::BackupCommand::List {
+            domain: None,
+            detailed,
+        },
+        &create_cli(false, false),
+    )
+    .await?;
+
+    press_enter_to_continue()?;
+    Ok(())
+}
+
+async fn delete_backup_interactive() -> Result<()> {
+    let delete_types = vec!["Delete specific backup", "Delete old backups"];
+
+    let delete_type = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Delete option")
+        .items(&delete_types)
+        .default(0)
+        .interact()?;
+
+    if delete_type == 0 {
+        // Delete specific backup
+        let backups = crate::database::backups::list(None).await?;
+
+        if backups.is_empty() {
+            println!("\n{} No backups found", "!".yellow());
+            press_enter_to_continue()?;
+            return Ok(());
+        }
+
+        let backup_items: Vec<String> = backups
+            .iter()
+            .map(|b| {
+                format!(
+                    "{} - {} ({})",
+                    b.id,
+                    b.domain,
+                    b.backup_name.as_deref().unwrap_or("unnamed")
+                )
+            })
+            .collect();
+
+        let backup_idx = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Select backup to delete")
+            .items(&backup_items)
+            .default(0)
+            .interact()?;
+
+        let backup_id = backups[backup_idx].id.to_string();
+
+        let confirm = Confirm::with_theme(&ColorfulTheme::default())
+            .with_prompt("Delete this backup?")
+            .default(false)
+            .interact()?;
+
+        if !confirm {
+            println!("{} Cancelled", "!".yellow());
+            press_enter_to_continue()?;
+            return Ok(());
+        }
+
+        commands::backup::execute(
+            commands::backup::BackupCommand::Delete {
+                backup_id: Some(backup_id),
+                older_than: None,
+            },
+            &create_cli(false, true),
+        )
+        .await?;
+    } else {
+        // Delete old backups
+        let days: u32 = Input::with_theme(&ColorfulTheme::default())
+            .with_prompt("Delete backups older than (days)")
+            .default(30)
+            .interact_text()?;
+
+        let confirm = Confirm::with_theme(&ColorfulTheme::default())
+            .with_prompt(format!("Delete all backups older than {} days?", days))
+            .default(false)
+            .interact()?;
+
+        if !confirm {
+            println!("{} Cancelled", "!".yellow());
+            press_enter_to_continue()?;
+            return Ok(());
+        }
+
+        commands::backup::execute(
+            commands::backup::BackupCommand::Delete {
+                backup_id: None,
+                older_than: Some(days),
+            },
+            &create_cli(false, true),
+        )
+        .await?;
+    }
 
     press_enter_to_continue()?;
     Ok(())

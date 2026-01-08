@@ -69,7 +69,7 @@ pub async fn execute(
     // Install WordPress if WP type
     if matches!(site_type, SiteType::Wp) {
         if let Some(ref db) = db_info {
-            install_wordpress(domain, &webroot, db, cli.verbose).await?;
+            install_wordpress(domain, &webroot, db, cache, cli.verbose).await?;
         }
     }
 
@@ -202,7 +202,13 @@ async fn create_database(domain: &str) -> Result<DbInfo> {
     })
 }
 
-async fn install_wordpress(domain: &str, webroot: &str, db: &DbInfo, verbose: bool) -> Result<()> {
+async fn install_wordpress(
+    domain: &str,
+    webroot: &str,
+    db: &DbInfo,
+    cache: Option<CacheType>,
+    verbose: bool,
+) -> Result<()> {
     use std::io::{self, Write};
 
     // Download WordPress
@@ -264,12 +270,234 @@ async fn install_wordpress(domain: &str, webroot: &str, db: &DbInfo, verbose: bo
     .await?;
     println!(" {}", "done".green());
 
+    // Install and configure cache plugins based on cache type
+    if let Some(cache_type) = cache {
+        install_cache_plugins(webroot, cache_type, verbose).await?;
+    }
+
     // Store admin password (we'll show it to user)
     println!(
         "\n  {} WordPress admin password: {}",
         "→".bright_cyan(),
         admin_password.bright_yellow()
     );
+
+    Ok(())
+}
+
+/// Install and configure WordPress cache plugins (Nginx Helper + Redis Object Cache)
+async fn install_cache_plugins(webroot: &str, cache_type: CacheType, verbose: bool) -> Result<()> {
+    use std::io::{self, Write};
+
+    match cache_type {
+        CacheType::None => return Ok(()),
+        CacheType::Fastcgi => {
+            // Install Nginx Helper for FastCGI cache purging
+            print!("  {} Installing Nginx Helper plugin...", "→".bright_cyan());
+            io::stdout().flush().ok();
+            shell::run_command_with_output(
+                "wp",
+                &[
+                    "plugin",
+                    "install",
+                    "nginx-helper",
+                    "--activate",
+                    &format!("--path={}", webroot),
+                    "--allow-root",
+                ],
+                verbose,
+            )
+            .await?;
+            println!(" {}", "done".green());
+
+            // Configure Nginx Helper for FastCGI cache
+            print!(
+                "  {} Configuring Nginx Helper for FastCGI...",
+                "→".bright_cyan()
+            );
+            io::stdout().flush().ok();
+            configure_nginx_helper(webroot, "fastcgi", verbose).await?;
+            println!(" {}", "done".green());
+        }
+        CacheType::Redis => {
+            // Install Nginx Helper for Redis full-page cache purging
+            print!("  {} Installing Nginx Helper plugin...", "→".bright_cyan());
+            io::stdout().flush().ok();
+            shell::run_command_with_output(
+                "wp",
+                &[
+                    "plugin",
+                    "install",
+                    "nginx-helper",
+                    "--activate",
+                    &format!("--path={}", webroot),
+                    "--allow-root",
+                ],
+                verbose,
+            )
+            .await?;
+            println!(" {}", "done".green());
+
+            // Configure Nginx Helper for Redis cache
+            print!(
+                "  {} Configuring Nginx Helper for Redis...",
+                "→".bright_cyan()
+            );
+            io::stdout().flush().ok();
+            configure_nginx_helper(webroot, "redis", verbose).await?;
+            println!(" {}", "done".green());
+
+            // Install Redis Object Cache plugin
+            print!(
+                "  {} Installing Redis Object Cache plugin...",
+                "→".bright_cyan()
+            );
+            io::stdout().flush().ok();
+            shell::run_command_with_output(
+                "wp",
+                &[
+                    "plugin",
+                    "install",
+                    "redis-cache",
+                    "--activate",
+                    &format!("--path={}", webroot),
+                    "--allow-root",
+                ],
+                verbose,
+            )
+            .await?;
+            println!(" {}", "done".green());
+
+            // Add Redis configuration to wp-config.php
+            print!("  {} Configuring Redis Object Cache...", "→".bright_cyan());
+            io::stdout().flush().ok();
+            configure_redis_object_cache(webroot, verbose).await?;
+            println!(" {}", "done".green());
+
+            // Enable Redis object cache
+            print!("  {} Enabling Redis object cache...", "→".bright_cyan());
+            io::stdout().flush().ok();
+            let _ = shell::run_command_with_output(
+                "wp",
+                &[
+                    "redis",
+                    "enable",
+                    &format!("--path={}", webroot),
+                    "--allow-root",
+                ],
+                verbose,
+            )
+            .await;
+            println!(" {}", "done".green());
+        }
+    }
+
+    Ok(())
+}
+
+/// Configure Nginx Helper plugin options
+async fn configure_nginx_helper(webroot: &str, cache_method: &str, verbose: bool) -> Result<()> {
+    let (enable_purge, cache_method_key) = match cache_method {
+        "fastcgi" => ("1", "enable_fastcgi"),
+        "redis" => ("1", "enable_redis"),
+        _ => ("0", "enable_fastcgi"),
+    };
+
+    // Add the cache path constant to wp-config.php (must be defined before plugins load)
+    if cache_method == "fastcgi" {
+        let _ = shell::run_command_with_output(
+            "wp",
+            &[
+                "config",
+                "set",
+                "RT_WP_NGINX_HELPER_CACHE_PATH",
+                "'/var/cache/nginx/fastcgi'",
+                "--raw",
+                "--type=constant",
+                &format!("--path={}", webroot),
+                "--allow-root",
+            ],
+            verbose,
+        )
+        .await;
+    }
+
+    // Use a PHP snippet to set all options at once
+    let php_code = format!(
+        r#"
+$options = get_option('rt_wp_nginx_helper_options', array());
+$options['enable_purge'] = '{}';
+$options['cache_method'] = '{}';
+$options['purge_homepage_on_edit'] = '1';
+$options['purge_homepage_on_del'] = '1';
+$options['purge_archive_on_edit'] = '1';
+$options['purge_archive_on_del'] = '1';
+$options['purge_archive_on_new_comment'] = '1';
+$options['purge_archive_on_deleted_comment'] = '1';
+$options['purge_page_on_mod'] = '1';
+$options['purge_page_on_new_comment'] = '1';
+$options['purge_page_on_deleted_comment'] = '1';
+$options['purge_method'] = 'unlink_files';
+$options['nginx_cache_path'] = '/var/cache/nginx/fastcgi';
+$options['enable_stamp'] = '1';
+$options['redis_hostname'] = '127.0.0.1';
+$options['redis_port'] = '6379';
+$options['redis_prefix'] = 'nginx-cache:';
+update_option('rt_wp_nginx_helper_options', $options);
+
+// Add purge capability to administrator role (required for plugin UI)
+$admin = get_role('administrator');
+if ($admin && !$admin->has_cap('Nginx Helper | Purge cache')) {{
+    $admin->add_cap('Nginx Helper | Purge cache');
+}}
+
+echo 'Nginx Helper configured';
+"#,
+        enable_purge, cache_method_key
+    );
+
+    shell::run_command_with_output(
+        "wp",
+        &[
+            "eval",
+            &php_code,
+            &format!("--path={}", webroot),
+            "--allow-root",
+        ],
+        verbose,
+    )
+    .await?;
+
+    Ok(())
+}
+
+/// Configure Redis Object Cache in wp-config.php
+async fn configure_redis_object_cache(webroot: &str, verbose: bool) -> Result<()> {
+    // Use wp config set to add Redis constants
+    let constants = [
+        ("WP_REDIS_HOST", "'127.0.0.1'", "constant"),
+        ("WP_REDIS_PORT", "6379", "constant"),
+        ("WP_REDIS_TIMEOUT", "1", "constant"),
+        ("WP_REDIS_READ_TIMEOUT", "1", "constant"),
+    ];
+
+    for (name, value, type_) in constants {
+        let _ = shell::run_command_with_output(
+            "wp",
+            &[
+                "config",
+                "set",
+                name,
+                value,
+                "--raw",
+                &format!("--type={}", type_),
+                &format!("--path={}", webroot),
+                "--allow-root",
+            ],
+            verbose,
+        )
+        .await;
+    }
 
     Ok(())
 }

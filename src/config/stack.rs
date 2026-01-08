@@ -91,6 +91,11 @@ http {
                     '$status $body_bytes_sent "$http_referer" '
                     '"$http_user_agent" "$http_x_forwarded_for"';
 
+    # Log format with FastCGI cache status (HIT/MISS/BYPASS/EXPIRED)
+    log_format cached '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" [$upstream_cache_status]';
+
     ##
     # Gzip Settings
     ##
@@ -137,6 +142,15 @@ http {
     fastcgi_read_timeout 300;
     fastcgi_send_timeout 300;
     fastcgi_connect_timeout 60;
+
+    ##
+    # FastCGI Cache
+    ##
+    fastcgi_cache_path /var/cache/nginx/fastcgi levels=1:2 keys_zone=WORDPRESS:100m inactive=60m max_size=1g;
+    fastcgi_cache_key "$scheme$request_method$host$request_uri";
+    fastcgi_cache_use_stale error timeout invalid_header updating http_500 http_503;
+    fastcgi_cache_lock on;
+    fastcgi_cache_lock_timeout 5s;
 
     ##
     # Rate Limiting
