@@ -98,27 +98,41 @@ pub enum BackupCommand {
 }
 
 pub async fn execute(command: BackupCommand, cli: &Cli) -> Result<()> {
+    use crate::utils::system::require_root;
+
     match command {
         BackupCommand::Create {
             domain,
             name,
             db_only,
             files_only,
-        } => create_backup(domain, name, db_only, files_only, cli).await,
+        } => {
+            require_root("create backup")?;
+            create_backup(domain, name, db_only, files_only, cli).await
+        }
         BackupCommand::Restore {
             backup,
             target,
             db_only,
             files_only,
-        } => restore_backup(backup, target, db_only, files_only, cli).await,
+        } => {
+            require_root("restore backup")?;
+            restore_backup(backup, target, db_only, files_only, cli).await
+        }
+        // Read-only command - no root required
         BackupCommand::List { domain, detailed } => list_backups(domain, detailed).await,
         BackupCommand::Delete {
             backup_id,
             older_than,
-        } => delete_backup(backup_id, older_than, cli).await,
+        } => {
+            require_root("delete backup")?;
+            delete_backup(backup_id, older_than, cli).await
+        }
         BackupCommand::Config { .. } => {
+            require_root("configure backup")?;
             anyhow::bail!("Backup config not yet implemented. Coming soon!")
         }
+        // Read-only command - no root required
         BackupCommand::ConfigShow => {
             anyhow::bail!("Backup config-show not yet implemented. Coming soon!")
         }

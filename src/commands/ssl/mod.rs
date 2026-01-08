@@ -93,6 +93,8 @@ impl KeyType {
 }
 
 pub async fn execute(command: SslCommand, cli: &Cli) -> anyhow::Result<()> {
+    use crate::utils::system::require_root;
+
     match command {
         SslCommand::Issue {
             domain,
@@ -101,6 +103,7 @@ pub async fn execute(command: SslCommand, cli: &Cli) -> anyhow::Result<()> {
             key_type,
             staging,
         } => {
+            require_root("issue SSL certificate")?;
             if wildcard {
                 let provider = dns.ok_or_else(|| {
                     anyhow::anyhow!("DNS provider required for wildcard (use --dns)")
@@ -111,15 +114,19 @@ pub async fn execute(command: SslCommand, cli: &Cli) -> anyhow::Result<()> {
             }
         }
         SslCommand::Renew { .. } => {
+            require_root("renew SSL certificate")?;
             anyhow::bail!("SSL renew not yet implemented. Coming soon!")
         }
         SslCommand::Revoke { .. } => {
+            require_root("revoke SSL certificate")?;
             anyhow::bail!("SSL revoke not yet implemented. Coming soon!")
         }
+        // Read-only commands - no root required
         SslCommand::Status { .. } => {
             anyhow::bail!("SSL status not yet implemented. Coming soon!")
         }
         SslCommand::DnsConfig { .. } => {
+            require_root("configure DNS provider")?;
             anyhow::bail!("DNS config not yet implemented. Coming soon!")
         }
         SslCommand::DnsProviders => {

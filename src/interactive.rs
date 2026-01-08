@@ -3,7 +3,61 @@ use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, MultiSelect, Select};
 
 use crate::commands;
+use crate::utils::system::is_root;
 use crate::Cli;
+
+/// Run a CLI command with privilege escalation if needed
+/// This allows interactive mode to work without root,
+/// prompting for sudo only when a privileged action is selected
+async fn run_privileged_command(args: &[&str]) -> Result<()> {
+    use std::process::Stdio;
+    use tokio::process::Command;
+
+    let current_exe = std::env::current_exe()?;
+    let exe_path = current_exe.to_str().unwrap_or("rw");
+
+    if is_root() {
+        // Already root, run directly
+        let status = Command::new(exe_path)
+            .args(args)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .await?;
+
+        if !status.success() {
+            anyhow::bail!("Command failed");
+        }
+    } else {
+        // Need sudo - show what we're doing
+        println!(
+            "\n{} This action requires elevated privileges.",
+            "→".bright_cyan()
+        );
+        println!(
+            "  Running: {} {} {}\n",
+            "sudo".yellow(),
+            exe_path,
+            args.join(" ")
+        );
+
+        let status = Command::new("sudo")
+            .arg(exe_path)
+            .args(args)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .await?;
+
+        if !status.success() {
+            anyhow::bail!("Command failed");
+        }
+    }
+
+    Ok(())
+}
 
 pub async fn run() -> Result<()> {
     print_banner();
@@ -229,35 +283,49 @@ async fn stack_install() -> Result<()> {
         return Ok(());
     }
 
-    // Build component list
-    let mut comp_list = Vec::new();
+    // Build CLI arguments for privileged command
+    let mut args = vec!["stack", "install"];
+
+    // Component names for CLI
+    let mut comp_args: Vec<&str> = Vec::new();
     for &idx in &selections {
         match idx {
-            0 => comp_list.push(commands::stack::Component::Nginx),
-            1 => comp_list.push(commands::stack::Component::Php),
-            2 => comp_list.push(commands::stack::Component::Mysql),
-            3 => comp_list.push(commands::stack::Component::Redis),
-            4 => comp_list.push(commands::stack::Component::Nodejs),
-            6 => comp_list.push(commands::stack::Component::Fail2ban),
-            7 => comp_list.push(commands::stack::Component::Clamav),
-            8 => comp_list.push(commands::stack::Component::Mysqltuner),
+            0 => comp_args.push("nginx"),
+            1 => comp_args.push("php"),
+            2 => comp_args.push("mysql"),
+            3 => comp_args.push("redis"),
+            4 => comp_args.push("nodejs"),
+            6 => comp_args.push("fail2ban"),
+            7 => comp_args.push("clamav"),
+            8 => comp_args.push("mysqltuner"),
             _ => {}
         }
     }
 
-    // Create a mock CLI for verbose=false, yes=true
-    let cli = create_cli(false, true);
+    // Add components to args
+    for comp in &comp_args {
+        args.push(comp);
+    }
 
-    commands::stack::install::execute(
-        false, // not --all
-        comp_list,
-        &php_version,
-        db_type,
-        &node_version,
-        false, // not custom nginx
-        &cli,
-    )
-    .await?;
+    // Add options
+    let php_arg = format!("--php-version={}", php_version);
+    args.push(&php_arg);
+
+    let db_arg = format!(
+        "--db-type={}",
+        match db_type {
+            commands::stack::DbType::Mariadb => "mariadb",
+            commands::stack::DbType::Mysql => "mysql",
+        }
+    );
+    args.push(&db_arg);
+
+    let node_arg = format!("--node-version={}", node_version);
+    args.push(&node_arg);
+
+    args.push("-y"); // Skip confirmation since we already confirmed
+
+    run_privileged_command(&args).await?;
 
     press_enter_to_continue()?;
     Ok(())
@@ -291,20 +359,26 @@ async fn stack_remove() -> Result<()> {
         return Ok(());
     }
 
-    let mut comp_list = Vec::new();
+    // Build CLI arguments for privileged command
+    let mut args = vec!["stack", "remove"];
+
     for &idx in &selections {
         match idx {
-            0 => comp_list.push(commands::stack::Component::Nginx),
-            1 => comp_list.push(commands::stack::Component::Php),
-            2 => comp_list.push(commands::stack::Component::Mysql),
-            3 => comp_list.push(commands::stack::Component::Redis),
-            4 => comp_list.push(commands::stack::Component::Nodejs),
+            0 => args.push("nginx"),
+            1 => args.push("php"),
+            2 => args.push("mysql"),
+            3 => args.push("redis"),
+            4 => args.push("nodejs"),
             _ => {}
         }
     }
 
-    let cli = create_cli(false, true);
-    commands::stack::remove::execute(comp_list, purge, &cli).await?;
+    if purge {
+        args.push("--purge");
+    }
+    args.push("-y");
+
+    run_privileged_command(&args).await?;
 
     press_enter_to_continue()?;
     Ok(())
@@ -325,8 +399,8 @@ async fn stack_update() -> Result<()> {
 
     match selection {
         0 => {
-            let cli = create_cli(false, true);
-            commands::stack::update::execute(vec![], &cli).await?;
+            // Update all components
+            run_privileged_command(&["stack", "update", "-y"]).await?;
         }
         1 => {
             let components = vec!["Nginx", "PHP", "MySQL/MariaDB", "Redis", "Node.js"];
@@ -335,20 +409,20 @@ async fn stack_update() -> Result<()> {
                 .items(&components)
                 .interact()?;
 
-            let mut comp_list = Vec::new();
+            let mut args = vec!["stack", "update"];
             for &idx in &selections {
                 match idx {
-                    0 => comp_list.push(commands::stack::Component::Nginx),
-                    1 => comp_list.push(commands::stack::Component::Php),
-                    2 => comp_list.push(commands::stack::Component::Mysql),
-                    3 => comp_list.push(commands::stack::Component::Redis),
-                    4 => comp_list.push(commands::stack::Component::Nodejs),
+                    0 => args.push("nginx"),
+                    1 => args.push("php"),
+                    2 => args.push("mysql"),
+                    3 => args.push("redis"),
+                    4 => args.push("nodejs"),
                     _ => {}
                 }
             }
+            args.push("-y");
 
-            let cli = create_cli(false, true);
-            commands::stack::update::execute(comp_list, &cli).await?;
+            run_privileged_command(&args).await?;
         }
         _ => return Ok(()),
     }
@@ -379,6 +453,7 @@ async fn php_versions_menu() -> Result<()> {
 
     match selection {
         0 => {
+            // List PHP versions (read-only, no sudo needed)
             let cli = create_cli(false, false);
             commands::stack::install::list_php_versions(&cli).await?;
         }
@@ -390,8 +465,8 @@ async fn php_versions_menu() -> Result<()> {
                 .default(0)
                 .interact()?;
 
-            let cli = create_cli(false, true);
-            commands::stack::install::install_php_version(versions[idx], &cli).await?;
+            let php_arg = format!("--php-version={}", versions[idx]);
+            run_privileged_command(&["stack", "php-install", &php_arg, "-y"]).await?;
         }
         _ => return Ok(()),
     }
@@ -423,6 +498,7 @@ async fn security_menu() -> Result<()> {
 
         match selection {
             0 => {
+                // Status is read-only, no sudo needed
                 commands::security::execute(
                     commands::security::SecurityCommand::Status,
                     &create_cli(false, false),
@@ -431,22 +507,16 @@ async fn security_menu() -> Result<()> {
                 press_enter_to_continue()?;
             }
             1 => {
-                commands::security::execute(
-                    commands::security::SecurityCommand::Mysqltuner,
-                    &create_cli(true, false),
-                )
-                .await?;
+                // MySQLTuner requires root
+                run_privileged_command(&["security", "mysqltuner"]).await?;
                 press_enter_to_continue()?;
             }
             2 => {
                 clamav_scan_menu().await?;
             }
             3 => {
-                commands::security::execute(
-                    commands::security::SecurityCommand::UpdateDefinitions,
-                    &create_cli(true, false),
-                )
-                .await?;
+                // Update definitions requires root
+                run_privileged_command(&["security", "update-definitions"]).await?;
                 press_enter_to_continue()?;
             }
             4 => {
@@ -468,14 +538,14 @@ async fn clamav_scan_menu() -> Result<()> {
         .default(true)
         .interact()?;
 
-    commands::security::execute(
-        commands::security::SecurityCommand::Scan {
-            path: Some(path),
-            quarantine,
-        },
-        &create_cli(true, false),
-    )
-    .await?;
+    // ClamAV scan requires root
+    let path_arg = format!("--path={}", path);
+    let mut args = vec!["security", "scan", &path_arg];
+    if quarantine {
+        args.push("--quarantine");
+    }
+
+    run_privileged_command(&args).await?;
 
     press_enter_to_continue()?;
     Ok(())
@@ -500,6 +570,7 @@ async fn fail2ban_menu() -> Result<()> {
 
         match selection {
             0 => {
+                // Status is read-only, no sudo needed
                 commands::security::execute(
                     commands::security::SecurityCommand::Fail2ban {
                         action: commands::security::Fail2banAction::Status,
@@ -510,6 +581,7 @@ async fn fail2ban_menu() -> Result<()> {
                 press_enter_to_continue()?;
             }
             1 => {
+                // Banned list is read-only, no sudo needed
                 commands::security::execute(
                     commands::security::SecurityCommand::Fail2ban {
                         action: commands::security::Fail2banAction::Banned,
@@ -524,13 +596,8 @@ async fn fail2ban_menu() -> Result<()> {
                     .with_prompt("IP address to unban")
                     .interact_text()?;
 
-                commands::security::execute(
-                    commands::security::SecurityCommand::Fail2ban {
-                        action: commands::security::Fail2banAction::Unban { ip, jail: None },
-                    },
-                    &create_cli(false, false),
-                )
-                .await?;
+                // Unban requires root
+                run_privileged_command(&["security", "fail2ban", "unban", &ip]).await?;
                 press_enter_to_continue()?;
             }
             3 => {
@@ -552,19 +619,13 @@ async fn fail2ban_menu() -> Result<()> {
                     .default(0)
                     .interact()?;
 
-                commands::security::execute(
-                    commands::security::SecurityCommand::Fail2ban {
-                        action: commands::security::Fail2banAction::Ban {
-                            ip,
-                            jail: jails[jail_idx].to_string(),
-                        },
-                    },
-                    &create_cli(false, false),
-                )
-                .await?;
+                // Ban requires root
+                let jail_arg = format!("--jail={}", jails[jail_idx]);
+                run_privileged_command(&["security", "fail2ban", "ban", &ip, &jail_arg]).await?;
                 press_enter_to_continue()?;
             }
             4 => {
+                // Logs are read-only, no sudo needed
                 commands::security::execute(
                     commands::security::SecurityCommand::Fail2ban {
                         action: commands::security::Fail2banAction::Logs { lines: 50 },
@@ -807,15 +868,9 @@ async fn create_staging_for_site(site: &crate::database::sites::Site) -> Result<
         return Ok(());
     }
 
-    let cli = create_cli(false, true);
-    commands::staging::execute(
-        commands::staging::StagingCommand::Create {
-            domain: site.domain.clone(),
-            prefix,
-        },
-        &cli,
-    )
-    .await?;
+    // Staging create requires root
+    let prefix_arg = format!("--prefix={}", prefix);
+    run_privileged_command(&["staging", "create", &site.domain, &prefix_arg, "-y"]).await?;
 
     press_enter_to_continue()?;
     Ok(())
@@ -846,34 +901,39 @@ async fn site_ssl_menu(domain: &str) -> Result<()> {
                         .default(0)
                         .interact()?;
 
-                    let provider = match idx {
-                        0 => commands::ssl::DnsProvider::Cloudflare,
-                        1 => commands::ssl::DnsProvider::Digitalocean,
-                        _ => commands::ssl::DnsProvider::Route53,
+                    let dns_provider = match idx {
+                        0 => "cloudflare",
+                        1 => "digitalocean",
+                        _ => "route53",
                     };
 
-                    commands::ssl::issue::execute_dns(
+                    // SSL issue with DNS requires root
+                    run_privileged_command(&[
+                        "ssl",
+                        "issue",
                         domain,
-                        provider,
-                        commands::ssl::KeyType::default(),
-                        false, // staging
-                        true,  // verbose
-                    )
+                        "--wildcard",
+                        "--dns",
+                        dns_provider,
+                        "-v",
+                    ])
                     .await?;
                 } else {
-                    commands::ssl::issue::execute_http(
-                        domain,
-                        commands::ssl::KeyType::default(),
-                        false, // staging
-                        true,  // verbose
-                    )
-                    .await?;
+                    // SSL issue with HTTP requires root
+                    run_privileged_command(&["ssl", "issue", domain, "-v"]).await?;
                 }
                 press_enter_to_continue()?;
             }
             1 => {
-                // TODO: Show SSL status when implemented
-                println!("\n{} SSL status check not yet implemented.\n", "→".yellow());
+                // SSL status is read-only
+                let cli = create_cli(false, false);
+                commands::ssl::execute(
+                    commands::ssl::SslCommand::Status {
+                        domain: Some(domain.to_string()),
+                    },
+                    &cli,
+                )
+                .await?;
                 press_enter_to_continue()?;
             }
             _ => return Ok(()),
@@ -935,19 +995,14 @@ async fn site_staging_menu(site: &crate::database::sites::Site) -> Result<()> {
         idx += 1;
 
         if selection == idx {
-            // Sync prod -> staging
-            let cli = create_cli(false, true);
-            commands::staging::execute(
-                commands::staging::StagingCommand::Sync {
-                    domain: site.domain.clone(),
-                    direction: commands::staging::SyncDirection::ProdToStage,
-                    files_only: false,
-                    db_only: false,
-                    exclude_tables: None,
-                    dry_run: false,
-                },
-                &cli,
-            )
+            // Sync prod -> staging (requires root)
+            run_privileged_command(&[
+                "staging",
+                "sync",
+                &site.domain,
+                "--direction=prod-to-stage",
+                "-y",
+            ])
             .await?;
             press_enter_to_continue()?;
             continue;
@@ -966,18 +1021,14 @@ async fn site_staging_menu(site: &crate::database::sites::Site) -> Result<()> {
                 .interact()?;
 
             if confirm {
-                let cli = create_cli(false, true);
-                commands::staging::execute(
-                    commands::staging::StagingCommand::Sync {
-                        domain: site.domain.clone(),
-                        direction: commands::staging::SyncDirection::StageToProd,
-                        files_only: false,
-                        db_only: false,
-                        exclude_tables: None,
-                        dry_run: false,
-                    },
-                    &cli,
-                )
+                // Sync stage -> prod (requires root)
+                run_privileged_command(&[
+                    "staging",
+                    "sync",
+                    &site.domain,
+                    "--direction=stage-to-prod",
+                    "-y",
+                ])
                 .await?;
             }
             press_enter_to_continue()?;
@@ -1009,14 +1060,8 @@ async fn site_staging_menu(site: &crate::database::sites::Site) -> Result<()> {
                 .interact()?;
 
             if confirm {
-                let cli = create_cli(false, true);
-                commands::staging::execute(
-                    commands::staging::StagingCommand::Delete {
-                        domain: site.domain.clone(),
-                    },
-                    &cli,
-                )
-                .await?;
+                // Staging delete requires root
+                run_privileged_command(&["staging", "delete", &site.domain, "-y"]).await?;
                 press_enter_to_continue()?;
                 return Ok(());
             }
@@ -1185,18 +1230,18 @@ async fn cache_purge_menu(domain: &str) -> Result<()> {
 
     match selection {
         0 => {
-            commands::site::cache::purge(domain, true, false, false, &create_cli(false, false))
-                .await?;
+            // Purge all caches requires root
+            run_privileged_command(&["site", "cache-purge", domain, "--all"]).await?;
             press_enter_to_continue()?;
         }
         1 => {
-            commands::site::cache::purge(domain, false, true, false, &create_cli(false, false))
-                .await?;
+            // Purge page cache requires root
+            run_privileged_command(&["site", "cache-purge", domain, "--page"]).await?;
             press_enter_to_continue()?;
         }
         2 => {
-            commands::site::cache::purge(domain, false, false, true, &create_cli(false, false))
-                .await?;
+            // Purge object cache requires root
+            run_privileged_command(&["site", "cache-purge", domain, "--object"]).await?;
             press_enter_to_continue()?;
         }
         _ => {}
@@ -1239,8 +1284,20 @@ async fn site_delete_confirm(domain: &str) -> Result<()> {
         return Ok(());
     }
 
-    let cli = create_cli(false, true);
-    commands::site::delete::execute(domain, all, files, db, &cli).await?;
+    // Build CLI arguments for privileged command
+    let mut args = vec!["site", "delete", domain];
+    if all {
+        args.push("--all");
+    }
+    if files {
+        args.push("--files");
+    }
+    if db {
+        args.push("--db");
+    }
+    args.push("-y");
+
+    run_privileged_command(&args).await?;
     press_enter_to_continue()?;
     Ok(())
 }
@@ -1421,20 +1478,79 @@ async fn site_create() -> Result<()> {
         return Ok(());
     }
 
-    let cli = create_cli(false, true);
-    commands::site::create::execute(
-        &domain,
-        site_type,
-        &php_version,
-        type_idx <= 1, // mysql for wp/php
-        cache,
-        ssl,
-        wildcard,
-        dns_provider,
-        upstream,
-        &cli,
-    )
-    .await?;
+    // Build CLI arguments for privileged command
+    let mut args = vec!["site", "create", &domain];
+
+    // Site type
+    let type_arg = format!(
+        "--type={}",
+        match site_type {
+            commands::site::SiteType::Wp => "wp",
+            commands::site::SiteType::Php => "php",
+            commands::site::SiteType::Static => "static",
+            commands::site::SiteType::Node => "node",
+            commands::site::SiteType::Proxy => "proxy",
+        }
+    );
+    args.push(&type_arg);
+
+    // PHP version
+    let php_arg = format!("--php={}", php_version);
+    if type_idx <= 1 {
+        args.push(&php_arg);
+    }
+
+    // MySQL for wp/php
+    if type_idx <= 1 {
+        args.push("--mysql");
+    }
+
+    // Cache
+    let cache_arg;
+    if let Some(ref c) = cache {
+        cache_arg = format!(
+            "--cache={}",
+            match c {
+                commands::site::CacheType::Fastcgi => "fastcgi",
+                commands::site::CacheType::Redis => "redis",
+                commands::site::CacheType::None => "none",
+            }
+        );
+        args.push(&cache_arg);
+    }
+
+    // SSL
+    if ssl {
+        args.push("--ssl");
+    }
+    if wildcard {
+        args.push("--wildcard");
+    }
+
+    // DNS provider
+    let dns_arg;
+    if let Some(ref dns) = dns_provider {
+        dns_arg = format!(
+            "--dns={}",
+            match dns {
+                commands::site::DnsProvider::Cloudflare => "cloudflare",
+                commands::site::DnsProvider::Digitalocean => "digitalocean",
+                commands::site::DnsProvider::Route53 => "route53",
+            }
+        );
+        args.push(&dns_arg);
+    }
+
+    // Upstream port
+    let upstream_arg;
+    if let Some(p) = upstream {
+        upstream_arg = format!("--upstream={}", p);
+        args.push(&upstream_arg);
+    }
+
+    args.push("-y");
+
+    run_privileged_command(&args).await?;
 
     press_enter_to_continue()?;
     Ok(())
@@ -1788,16 +1904,21 @@ async fn create_backup_interactive() -> Result<()> {
 
     let name = if name.is_empty() { None } else { Some(name) };
 
-    commands::backup::execute(
-        commands::backup::BackupCommand::Create {
-            domain: Some(domain.clone()),
-            name,
-            db_only,
-            files_only,
-        },
-        &create_cli(false, false),
-    )
-    .await?;
+    // Build CLI arguments for privileged command
+    let mut args = vec!["backup", "create", domain];
+    let name_arg;
+    if let Some(ref n) = name {
+        name_arg = format!("--name={}", n);
+        args.push(&name_arg);
+    }
+    if db_only {
+        args.push("--db-only");
+    }
+    if files_only {
+        args.push("--files-only");
+    }
+
+    run_privileged_command(&args).await?;
 
     press_enter_to_continue()?;
     Ok(())
@@ -1892,16 +2013,22 @@ async fn restore_backup_interactive() -> Result<()> {
         return Ok(());
     }
 
-    commands::backup::execute(
-        commands::backup::BackupCommand::Restore {
-            backup: backup_id,
-            target,
-            db_only,
-            files_only,
-        },
-        &create_cli(false, true), // yes=true since we already confirmed
-    )
-    .await?;
+    // Build CLI arguments for privileged command
+    let mut args = vec!["backup", "restore", &backup_id];
+    let target_arg;
+    if let Some(ref t) = target {
+        target_arg = format!("--target={}", t);
+        args.push(&target_arg);
+    }
+    if db_only {
+        args.push("--db-only");
+    }
+    if files_only {
+        args.push("--files-only");
+    }
+    args.push("-y");
+
+    run_privileged_command(&args).await?;
 
     press_enter_to_continue()?;
     Ok(())
@@ -1976,14 +2103,8 @@ async fn delete_backup_interactive() -> Result<()> {
             return Ok(());
         }
 
-        commands::backup::execute(
-            commands::backup::BackupCommand::Delete {
-                backup_id: Some(backup_id),
-                older_than: None,
-            },
-            &create_cli(false, true),
-        )
-        .await?;
+        // Delete specific backup (requires root)
+        run_privileged_command(&["backup", "delete", "--backup-id", &backup_id, "-y"]).await?;
     } else {
         // Delete old backups
         let days: u32 = Input::with_theme(&ColorfulTheme::default())
@@ -2002,14 +2123,9 @@ async fn delete_backup_interactive() -> Result<()> {
             return Ok(());
         }
 
-        commands::backup::execute(
-            commands::backup::BackupCommand::Delete {
-                backup_id: None,
-                older_than: Some(days),
-            },
-            &create_cli(false, true),
-        )
-        .await?;
+        // Delete old backups (requires root)
+        let days_arg = format!("--older-than={}", days);
+        run_privileged_command(&["backup", "delete", &days_arg, "-y"]).await?;
     }
 
     press_enter_to_continue()?;
@@ -2038,6 +2154,7 @@ async fn service_menu() -> Result<()> {
 
     match selection {
         0 => {
+            // Status is read-only, no sudo needed
             let cli = create_cli(false, false);
             commands::service::execute(
                 commands::service::ServiceCommand::Status { service: None },
@@ -2077,17 +2194,17 @@ async fn service_menu() -> Result<()> {
                 .default(0)
                 .interact()?;
 
-            let service = services[svc_idx].to_string();
-            let cli = create_cli(false, true);
+            let service = &services[svc_idx];
 
-            let cmd = match selection {
-                1 => commands::service::ServiceCommand::Start { service },
-                2 => commands::service::ServiceCommand::Stop { service },
-                3 => commands::service::ServiceCommand::Restart { service },
-                _ => commands::service::ServiceCommand::Reload { service },
+            // Service start/stop/restart/reload requires root
+            let action = match selection {
+                1 => "start",
+                2 => "stop",
+                3 => "restart",
+                _ => "reload",
             };
 
-            commands::service::execute(cmd, &cli).await?;
+            run_privileged_command(&["service", action, service]).await?;
             press_enter_to_continue()?;
         }
         _ => {}
@@ -2101,8 +2218,6 @@ async fn service_menu() -> Result<()> {
 // ============================================================================
 
 async fn site_enable_disable(domain: &str, currently_enabled: bool) -> Result<()> {
-    let cli = create_cli(false, false);
-
     if currently_enabled {
         // Confirm disable
         let confirm = Confirm::with_theme(&ColorfulTheme::default())
@@ -2111,11 +2226,11 @@ async fn site_enable_disable(domain: &str, currently_enabled: bool) -> Result<()
             .interact()?;
 
         if confirm {
-            commands::site::enable::disable(domain, &cli).await?;
+            run_privileged_command(&["site", "disable", domain]).await?;
         }
     } else {
         // Enable without confirmation
-        commands::site::enable::enable(domain, &cli).await?;
+        run_privileged_command(&["site", "enable", domain]).await?;
     }
 
     press_enter_to_continue()?;
@@ -2199,8 +2314,8 @@ async fn site_update_php(domain: &str, current_version: Option<&str>) -> Result<
         return Ok(());
     }
 
-    let cli = create_cli(false, false);
-    commands::site::update::execute(domain, Some(new_version.clone()), None, &cli).await?;
+    let php_arg = format!("--php={}", new_version);
+    run_privileged_command(&["site", "update", domain, &php_arg]).await?;
     press_enter_to_continue()?;
     Ok(())
 }
@@ -2232,7 +2347,7 @@ async fn site_update_cache(domain: &str, current_cache: Option<&str>) -> Result<
         .default(0)
         .interact()?;
 
-    let (_, new_cache, new_cache_str) = &cache_options[selection];
+    let (_, _new_cache, new_cache_str) = &cache_options[selection];
 
     if Some(*new_cache_str) == current_cache {
         println!(
@@ -2259,8 +2374,8 @@ async fn site_update_cache(domain: &str, current_cache: Option<&str>) -> Result<
         return Ok(());
     }
 
-    let cli = create_cli(false, false);
-    commands::site::update::execute(domain, None, Some(*new_cache), &cli).await?;
+    let cache_arg = format!("--cache={}", new_cache_str);
+    run_privileged_command(&["site", "update", domain, &cache_arg]).await?;
     press_enter_to_continue()?;
     Ok(())
 }

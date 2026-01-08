@@ -89,6 +89,8 @@ pub enum DbType {
 }
 
 pub async fn execute(command: StackCommand, cli: &Cli) -> anyhow::Result<()> {
+    use crate::utils::system::require_root;
+
     match command {
         StackCommand::Install {
             all,
@@ -98,6 +100,7 @@ pub async fn execute(command: StackCommand, cli: &Cli) -> anyhow::Result<()> {
             node_version,
             nginx_custom,
         } => {
+            require_root("install stack components")?;
             install::execute(
                 all,
                 components,
@@ -109,10 +112,20 @@ pub async fn execute(command: StackCommand, cli: &Cli) -> anyhow::Result<()> {
             )
             .await
         }
-        StackCommand::Remove { components, purge } => remove::execute(components, purge, cli).await,
-        StackCommand::Update { components } => update::execute(components, cli).await,
+        StackCommand::Remove { components, purge } => {
+            require_root("remove stack components")?;
+            remove::execute(components, purge, cli).await
+        }
+        StackCommand::Update { components } => {
+            require_root("update stack components")?;
+            update::execute(components, cli).await
+        }
+        // Read-only commands - no root required
         StackCommand::Status => status::execute(cli).await,
         StackCommand::PhpVersions => install::list_php_versions(cli).await,
-        StackCommand::PhpInstall { version } => install::install_php_version(&version, cli).await,
+        StackCommand::PhpInstall { version } => {
+            require_root("install PHP version")?;
+            install::install_php_version(&version, cli).await
+        }
     }
 }

@@ -6,6 +6,8 @@ use crate::Cli;
 const GITHUB_REPO: &str = "rustwops/rustwops";
 
 pub async fn execute(check_only: bool, _cli: &Cli) -> Result<()> {
+    use crate::utils::system::require_root;
+
     println!("{} Checking for updates...\n", "→".bright_cyan().bold());
 
     let current_version = env!("CARGO_PKG_VERSION");
@@ -26,11 +28,14 @@ pub async fn execute(check_only: bool, _cli: &Cli) -> Result<()> {
 
     if check_only {
         println!(
-            "\n{} Update available! Run 'rw update' to install.",
+            "\n{} Update available! Run 'sudo rw update' to install.",
             "→".bright_cyan()
         );
         return Ok(());
     }
+
+    // Installing update requires root
+    require_root("update RustWops")?;
 
     // Download and install update
     println!("\n{} Downloading update...", "→".bright_cyan());

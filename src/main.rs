@@ -2,7 +2,7 @@ use clap::Parser;
 use colored::Colorize;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use rustwops::{commands, interactive, utils, Cli, Commands};
+use rustwops::{commands, interactive, Cli, Commands};
 
 fn setup_logging(verbose: bool) {
     let filter = if verbose {
@@ -51,12 +51,7 @@ async fn run() -> anyhow::Result<()> {
     // If no arguments provided, launch interactive mode
     if std::env::args().len() == 1 {
         setup_logging(false);
-
-        // Check if running as root for system operations
-        if !cfg!(debug_assertions) && !utils::system::is_root() {
-            anyhow::bail!("RustWops must be run as root for system operations");
-        }
-
+        // Interactive mode supports per-action sudo escalation
         return interactive::run().await;
     }
 
@@ -64,10 +59,7 @@ async fn run() -> anyhow::Result<()> {
 
     setup_logging(cli.verbose);
 
-    // Check if running as root for system operations
-    if !cfg!(debug_assertions) && !utils::system::is_root() {
-        anyhow::bail!("RustWops must be run as root for system operations");
-    }
+    // Root checks are now done per-command based on operation type
 
     match &cli.command {
         Commands::Stack { command } => {
