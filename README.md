@@ -109,6 +109,7 @@ rw site delete <domain> [--all]            # Delete a site
 rw site list                               # List all sites
 rw site info <domain>                      # Show site details
 rw site cache-purge <domain>               # Purge cache for WordPress site
+rw site pm2 <domain> <action>              # PM2 management for Node.js sites
 ```
 
 #### Site Creation Options
@@ -135,6 +136,16 @@ When using `--cache fastcgi` or `--cache redis`, RustWops automatically:
 - Installs **Redis Object Cache** plugin for Redis caching
 - Adds `X-Cache-Status` header showing HIT/MISS/BYPASS
 - Configures automatic cache purging when content is edited
+
+#### PM2 Management (Node.js Sites)
+
+```bash
+rw site pm2 <domain> start                 # Start the PM2 app
+rw site pm2 <domain> stop                  # Stop the PM2 app
+rw site pm2 <domain> restart               # Restart the PM2 app
+rw site pm2 <domain> status                # Show detailed PM2 status
+rw site pm2 <domain> logs                  # View logs in real-time
+```
 
 ### SSL Certificates
 
@@ -181,6 +192,18 @@ rw backup restore <id>                     # Restore from backup ID
 rw backup restore <id> --target <domain>   # Restore to different domain
 rw backup delete <id>                      # Delete specific backup
 rw backup delete --older-than 30           # Delete backups older than 30 days
+rw backup config [options]                 # Configure backup settings
+rw backup config-show                      # Show backup configuration
+```
+
+#### Backup Configuration
+
+```bash
+rw backup config --dir /path/to/backups    # Set backup directory
+rw backup config --retention 30            # Keep backups for 30 days
+rw backup config --s3-bucket mybucket      # Configure S3 bucket
+rw backup config --s3-region us-east-1     # Configure S3 region
+rw backup config --schedule "0 3 * * *"    # Schedule daily backup at 3am
 ```
 
 ### Log Viewing

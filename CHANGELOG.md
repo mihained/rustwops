@@ -5,6 +5,37 @@ All notable changes to RustWops will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-01-08
+
+### Added
+- **PM2 management for Node.js sites**
+  - `rw site pm2 <domain> start` - Start the PM2 app
+  - `rw site pm2 <domain> stop` - Stop the PM2 app
+  - `rw site pm2 <domain> restart` - Restart the PM2 app
+  - `rw site pm2 <domain> status` - Show detailed PM2 status
+  - `rw site pm2 <domain> logs` - View PM2 logs in real-time
+  - Available in interactive mode under Node.js site actions
+- **Backup configuration command**
+  - `rw backup config --dir <path>` - Set backup directory
+  - `rw backup config --retention <days>` - Set retention policy
+  - `rw backup config --s3-bucket <name>` - Configure S3 bucket
+  - `rw backup config --s3-region <region>` - Configure S3 region
+  - `rw backup config --schedule <cron>` - Set backup schedule (creates cron job)
+  - `rw backup config-show` - Display current backup configuration
+  - Available in interactive mode under Backup menu
+
+### Changed
+- Interactive menu now shows PM2 management option for Node.js sites
+- Backup menu now includes configuration and show config options
+
+## [0.5.0] - 2026-01-08
+
+### Added
+- **Privilege separation** - run without root, sudo prompts only when needed
+  - Read-only commands (list, info, status) work without root
+  - Write operations prompt for sudo automatically
+  - Interactive mode works as regular user
+
 ## [0.4.0] - 2026-01-08
 
 ### Added
